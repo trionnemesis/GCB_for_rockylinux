@@ -107,7 +107,43 @@
 * **互動式確認**: 在執行任何系統變更之前，腳本會清晰地展示**將要執行**的 `firewalld` 指令列表和**無法轉換**的規則列表，並要求管理者輸入 `yes` 進行最終確認，提供一道安全防線。
 * **服務管理**: 獲得確認後，腳本會執行轉換指令、重載 `firewalld`，並**停止及禁用 (stop & disable)** `iptables` 相關服務，完成無縫切換。
 
+### `GCB_apache.sh` - Apache 網站伺服器強化腳本
+
+4.此腳本專門用於強化 Apache 2.4 網站伺服器，使其符合 GCB 的安全規範。
+
+#### 主要功能：
+
+* **自動備份**: 執行前自動備份現有的 `httpd.conf` 設定檔。
+
+* **模組最小化**: 停用 `dav_module` (WebDAV), `status_module`, `autoindex_module`, `proxy_module` 相關模組, `userdir_module`, `info_module` 等非必要或有潛在風險的模組。
+
+* **安全執行身份**: 確保 Apache 以專屬的低權限帳號 (如 `apache`) 運行，並鎖定該帳號的 shell 及密碼，使其無法登入系統。
+
+* **權限與存取控制**:
+    * 設定 `ServerRoot` (Apache安裝目錄) 的擁有者為 `root`，並移除不必要的寫入權限。
+    * 採用「預設拒絕」原則，全域設定 `<Directory />` 為 `Require all denied`。
+    * 禁止 `.htaccess` 等敏感檔案被用戶端存取。
+
+* **防止資訊洩露**:
+    * 設定 `ServerTokens Prod` 及 `ServerSignature Off`，隱藏 Apache 的詳細版本與作業系統資訊。
+    * 設定 `FileETag None`，避免洩漏檔案的 i-node 資訊。
+
+* **強化 SSL/TLS**:
+    * 採用模組化設定，僅啟用 TLSv1.2 及以上的強健協定。
+    * 設定強健的加密演算法套件 (Cipher Suite)，並優先使用伺服器端的加密順序。
+    * 關閉不安全的 SSL 重新協商與 SSL 壓縮 (防範 CRIME 攻擊)。
+    * 提示管理者手動啟用 HSTS (`Strict-Transport-Security`) 來強制瀏覽器使用 HTTPS。
+
+* **緩解 DoS 攻擊**:
+    * 設定合理的 `Timeout`、`KeepAliveTimeout` 時間。
+    * 啟用 `mod_reqtimeout` 模組，防範 Slowloris 等慢速攻擊。
+    * 限制請求行、標頭欄位數量與大小 (`LimitRequestLine`, `LimitRequestFields` 等)，防止緩衝區溢位攻擊。
+
+* **其他安全性設定**:
+    * 停用 `TRACE` 請求方法 (`TraceEnable off`)。
+    * 提示管理者手動設定 `X-Frame-Options` 或 `Content-Security-Policy` 以防範點擊劫持 (Clickjacking) 攻擊。
 ---
+
 
 ## 🚀 使用說明
 
