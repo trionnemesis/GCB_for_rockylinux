@@ -953,7 +953,7 @@ fi
     echo "========================================================"
     echo "=== GCB 腳本執行完畢 ==="
     echo "========================================================"
-	echo "重要：如果原來防火牆設定是在iptables上請額外執行iptables_to_firwalld.sh。"
+    echo "重要：如果原來防火牆設定是在iptables上請額外執行iptables_to_firwalld.sh。"
     echo "重要：部分設定 (如核心模組、GRUB) 需要重新開機後才會完整生效。"
     read -p "您想現在重新開機嗎? (y/N): " reboot_confirm
     if [[ "${reboot_confirm,,}" == "y" ]]; then
