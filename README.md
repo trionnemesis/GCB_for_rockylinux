@@ -117,26 +117,30 @@
     cd /root/GCB_SET
     chmod +x GCB.sh GCB_sshd.sh iptables_to_firewalld.sh
     ```
-3.  **執行主要 GCB 腳本**:
+3.  **離線環境準備** (選擇性):
+    * 若您的伺服器無法連上外部網路，請事先下載 `sudo`、`aide`、`audit`、
+      `rsyslog`、`libselinux`、`firewalld`、`openssh-server` 等套件的 rpm 檔案。
+      腳本偵測到離線時會略過上述安裝步驟，您需要手動安裝這些套件。
+4.  **執行主要 GCB 腳本**:
     ```bash
     sudo ./GCB.sh
     ```
     * 在過程中，腳本會詢問您要設定的防火牆 (`Firewalld` 或 `Nftables`)。對於標準的 Rocky/RHEL 9 環境，建議選擇 `Firewalld`。
 
-4.  **執行 SSH 強化腳本**:
+5.  **執行 SSH 強化腳本**:
     ```bash
     sudo ./GCB_sshd.sh
     ```
     * **再次提醒**: 執行此腳本後，`root` 將無法透過 SSH 登入。請務必確認您已建立好具備 `sudo` 權限的一般使用者帳號，並可從遠端成功登入。
 
-5.  **(選擇性) 執行 iptables 轉換腳本**:
+6.  **(選擇性) 執行 iptables 轉換腳本**:
     * 僅當您需要從舊的 `iptables` 設定檔遷移規則時才執行此腳本。
     ```bash
     # 範例：假設您的舊規則檔存放於 /etc/sysconfig/iptables
     sudo ./iptables_to_firewalld.sh /etc/sysconfig/iptables
     ```
 
-6.  **重新開機**:
+7.  **重新開機**:
     * `GCB.sh` 腳本執行完畢後會詢問是否立即重新開機。許多核心層級的設定 (如 GRUB 參數、`audit=1`) 需要**重新開機**後才能完全生效。建議在所有腳本執行完畢並確認基本連線無誤後，手動重啟系統。
 
 ---

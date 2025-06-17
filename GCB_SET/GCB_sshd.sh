@@ -19,6 +19,27 @@
 BACKUP_DIR="/root/gcb_backup_$(date +%Y%m%d_%H%M%S)"
 echo "--- 正在建立備份 ---"
 
+echo "--- 檢查外部網路連線狀態 ---"
+if curl -s --head --connect-timeout 5 https://www.google.com >/dev/null; then
+    NETWORK_AVAILABLE=1
+    echo "外部網路連線正常，可直接使用 dnf 安裝。"
+else
+    NETWORK_AVAILABLE=0
+    echo "[警告] 無法連線外部網路，將略過需要下載的安裝步驟。"
+    echo "      請預先準備所需的 rpm 套件並手動安裝。"
+fi
+
+run_dnf() {
+    local cmd="$1"
+    local rpm_desc="$2"
+    if [ "$NETWORK_AVAILABLE" -eq 1 ]; then
+        eval "$cmd"
+    else
+        echo "[!] 已離線，略過: $cmd"
+        [ -n "$rpm_desc" ] && echo "    需額外安裝 rpm 套件: $rpm_desc"
+    fi
+}
+
 if mkdir -p "${BACKUP_DIR}/pam.d"; then
     echo "備份目錄已建立於: ${BACKUP_DIR}"
 else
@@ -74,7 +95,7 @@ echo "--- 開始套用 SSH 安全組態基準 ---"
 
 # TWGCB-01-012-0254: 安裝並啟用 sshd 守護程序
 echo "正在安裝並啟用 OpenSSH Server..."
-dnf install -y openssh-server.x86_64
+run_dnf "dnf install -y openssh-server.x86_64" "openssh-server"
 systemctl --now enable sshd.service
 
 # TWGCB-01-012-0255: 設定 SSH 協定版本為 2
