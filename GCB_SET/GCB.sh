@@ -49,6 +49,30 @@ if [[ $EUID -ne 0 ]]; then
    exit 1
 fi
 
+###############################################################################
+#   網路連線檢查與 dnf 包裝函式
+###############################################################################
+echo "--- 檢查外部網路連線狀態 ---"
+if curl -s --head --connect-timeout 5 https://www.google.com >/dev/null; then
+    NETWORK_AVAILABLE=1
+    echo "外部網路連線正常，可直接使用 dnf 安裝。"
+else
+    NETWORK_AVAILABLE=0
+    echo "[警告] 無法連線外部網路，將略過需要下載的安裝步驟。"
+    echo "      請預先準備所需的 rpm 套件並手動安裝。"
+fi
+
+run_dnf() {
+    local cmd="$1"
+    local rpm_desc="$2"
+    if [ "$NETWORK_AVAILABLE" -eq 1 ]; then
+        eval "$cmd"
+    else
+        echo "[!] 已離線，略過: $cmd"
+        [ -n "$rpm_desc" ] && echo "    需額外安裝 rpm 套件: $rpm_desc"
+    fi
+}
+
 # --- 全域函式 ---
 
 # 顯示手動操作 fstab 的說明
@@ -241,7 +265,7 @@ apply_system_settings() {
     fi
 
     echo "[*] TWGCB-01-012-0033: 安裝 sudo 套件..."
-    dnf install -y sudo
+    run_dnf "dnf install -y sudo" "sudo"
 
     echo "[*] TWGCB-01-012-0034: 設定 sudo 指令使用 pty..."
     echo "Defaults use_pty" > /etc/sudoers.d/gcb_pty
@@ -250,7 +274,7 @@ apply_system_settings() {
     echo 'Defaults logfile="/var/log/sudo.log"' > /etc/sudoers.d/gcb_logfile
 
     echo "[*] TWGCB-01-012-0036 & 0037: 安裝並設定 AIDE 定期檢查..."
-    dnf install -y aide
+    run_dnf "dnf install -y aide" "aide"
     aide --init
     mv -f /var/lib/aide/aide.db.new.gz /var/lib/aide/aide.db.gz
     echo "0 5 * * * /usr/sbin/aide --check" > /etc/cron.d/aide_check
@@ -531,7 +555,7 @@ apply_logging_and_auditing_settings() {
     echo "========================================================"
     
     echo "[*] TWGCB-01-012-0132: 安裝 auditd 套件..."
-    dnf install -y audit audit-libs
+    run_dnf "dnf install -y audit audit-libs" "audit audit-libs"
 
     echo "[*] TWGCB-01-012-0133: 啟用 auditd 服務..."
     systemctl --now enable auditd
@@ -623,7 +647,7 @@ EOF
     augenrules --load
     
     echo "[*] TWGCB-01-012-0174: 安裝 rsyslog 套件..."
-    dnf install -y rsyslog
+    run_dnf "dnf install -y rsyslog" "rsyslog"
 
     echo "[*] TWGCB-01-012-0175: 啟用 rsyslog 服務..."
     systemctl --now enable rsyslog
@@ -666,7 +690,7 @@ apply_selinux_settings() {
     echo "================================================"
 
     echo "[*] TWGCB-01-012-0182: 安裝 SELinux 套件..."
-    dnf install -y libselinux
+    run_dnf "dnf install -y libselinux" "libselinux"
     
     echo "[*] TWGCB-01-012-0183: 於開機載入程式中啟用 SELinux..."
     # 移除 selinux=0 和 enforcing=0
@@ -811,7 +835,7 @@ apply_firewalld_settings() {
     echo "========================================================"
 
     echo "[*] TWGCB-01-012-0242: 安裝 firewalld 防火牆套件..."
-    dnf install -y firewalld
+    run_dnf "dnf install -y firewalld" "firewalld"
 
     echo "[*] TWGCB-01-012-0243: 啟用 firewalld 服務..."
     systemctl --now enable firewalld
