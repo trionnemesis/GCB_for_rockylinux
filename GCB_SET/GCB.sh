@@ -955,6 +955,7 @@ fi
     echo "========================================================"
     echo "重要：如果原來防火牆設定是在iptables上請額外執行iptables_to_firwalld.sh。"
     echo "重要：部分設定 (如核心模組、GRUB) 需要重新開機後才會完整生效。"
+    echo "重要：如果執行完成之後務必測試主機服務相關功能是否被影響"
     read -p "您想現在重新開機嗎? (y/N): " reboot_confirm
     if [[ "${reboot_confirm,,}" == "y" ]]; then
         echo "系統將在 5 秒後重新啟動..."
