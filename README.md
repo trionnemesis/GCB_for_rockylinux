@@ -177,7 +177,7 @@ Rocky-Linux-9-GCB/
 
 #### 1. 執行權限設定
 ```bash
-# 下載或克隆專案後，設定執行權限
+# 下載或clone專案後，設定執行權限
 chmod +x GCB_CHECK/*.sh
 chmod +x GCB_SET/*.sh
 ```
