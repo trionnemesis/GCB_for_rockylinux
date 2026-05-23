@@ -100,21 +100,21 @@ check_filesystem() {
     print_header "磁碟與檔案系統 (1/3)"
 
     # TWGCB-01-012-0001: 停用 cramfs 檔案系統
-    if ! modprobe -n -v cramfs | grep -q "install /bin/true" && ! lsmod | grep -q "cramfs"; then
+    if modprobe -n -v cramfs 2>/dev/null | grep -q "install /bin/true" && ! lsmod | grep -q "cramfs"; then
         print_pass "TWGCB-01-012-0001: cramfs 檔案系統已停用。"
     else
         print_fail "TWGCB-01-012-0001: cramfs 檔案系統未停用。應在 /etc/modprobe.d/ 建立設定檔停用。"
     fi
 
     # TWGCB-01-012-0002: 停用 squashfs 檔案系統
-    if ! modprobe -n -v squashfs | grep -q "install /bin/true" && ! lsmod | grep -q "squashfs"; then
+    if modprobe -n -v squashfs 2>/dev/null | grep -q "install /bin/true" && ! lsmod | grep -q "squashfs"; then
         print_pass "TWGCB-01-012-0002: squashfs 檔案系統已停用。"
     else
         print_fail "TWGCB-01-012-0002: squashfs 檔案系統未停用。應在 /etc/modprobe.d/ 建立設定檔停用。"
     fi
 
     # TWGCB-01-012-0003: 停用 udf 檔案系統
-    if ! modprobe -n -v udf | grep -q "install /bin/true" && ! lsmod | grep -q "udf"; then
+    if modprobe -n -v udf 2>/dev/null | grep -q "install /bin/true" && ! lsmod | grep -q "udf"; then
         print_pass "TWGCB-01-012-0003: udf 檔案系統已停用。"
     else
         print_fail "TWGCB-01-012-0003: udf 檔案系統未停用。應在 /etc/modprobe.d/ 建立設定檔停用。"
@@ -171,21 +171,28 @@ check_filesystem() {
     fi
 
     # TWGCB-01-012-0031: 停用 USB 儲存裝置
-    if ! modprobe -n -v usb-storage | grep -q "install /bin/true" && ! lsmod | grep -q "usb_storage"; then
+    if modprobe -n -v usb-storage 2>/dev/null | grep -q "install /bin/true" && ! lsmod | grep -q "usb_storage"; then
         print_pass "TWGCB-01-012-0031: USB 儲存裝置已停用。"
     else
         print_fail "TWGCB-01-012-0031: USB 儲存裝置未停用。應在 /etc/modprobe.d/ 建立設定檔停用。"
     fi
 
     print_header "磁碟與檔案系統 (3/3)"
-    # 新增項目檢查 from v1.1
-    # TWGCB-01-012-0285 to 0297, 0299-0300: 停用各種檔案系統
-    FS_TO_DISABLE=(freevxfs hfs hfsplus jffs2 afs ceph cifs exfat ext fat fscache fuse gfs2 nfsd)
-    for fs in "${FS_TO_DISABLE[@]}"; do
-        if ! modprobe -n -v "$fs" | grep -q "install /bin/true" && ! lsmod | grep -q "$fs"; then
-            print_pass "TWGCB-01-012-XXXX: $fs 檔案系統已停用。"
+    # TWGCB-01-012-0285 ~ 0300: 停用各種非必要之檔案系統
+    # ID 對照與 GCB_SET/GCB.sh 套用之項目一致
+    declare -A FS_TO_DISABLE=(
+        ["0285"]="freevxfs" ["0286"]="hfs"      ["0287"]="hfsplus" ["0288"]="jffs2"
+        ["0289"]="afs"      ["0290"]="ceph"     ["0291"]="cifs"    ["0292"]="exfat"
+        ["0293"]="ext"      ["0294"]="fat"      ["0295"]="fscache" ["0296"]="fuse"
+        ["0297"]="gfs2"     ["0298"]="nfs_common" ["0299"]="nfsd"  ["0300"]="smbfs_common"
+    )
+    for id in $(printf '%s\n' "${!FS_TO_DISABLE[@]}" | sort); do
+        fs="${FS_TO_DISABLE[$id]}"
+        mod="${fs//-/_}"
+        if modprobe -n -v "$fs" 2>/dev/null | grep -q "install /bin/true" && ! lsmod | grep -q "^${mod} "; then
+            print_pass "TWGCB-01-012-${id}: ${fs} 檔案系統已停用。"
         else
-            print_fail "TWGCB-01-012-XXXX: $fs 檔案系統未停用。應在 /etc/modprobe.d/ 建立設定檔停用。"
+            print_fail "TWGCB-01-012-${id}: ${fs} 檔案系統未停用。應在 /etc/modprobe.d/ 建立設定檔停用。"
         fi
     done
 }
