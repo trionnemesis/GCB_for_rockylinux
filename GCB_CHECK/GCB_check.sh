@@ -178,14 +178,21 @@ check_filesystem() {
     fi
 
     print_header "磁碟與檔案系統 (3/3)"
-    # 新增項目檢查 from v1.1
-    # TWGCB-01-012-0285 to 0297, 0299-0300: 停用各種檔案系統
-    FS_TO_DISABLE=(freevxfs hfs hfsplus jffs2 afs ceph cifs exfat ext fat fscache fuse gfs2 nfsd)
-    for fs in "${FS_TO_DISABLE[@]}"; do
+    # 新增項目檢查 from v1.1 (TWGCB-01-012-0285 至 0300: 停用各種檔案系統)
+    # 項目編號與停用模組對應 GCB_SET/GCB.sh 之套用設定。
+    FS_TO_DISABLE=(
+        "0285:freevxfs" "0286:hfs" "0287:hfsplus" "0288:jffs2"
+        "0289:afs" "0290:ceph" "0291:cifs" "0292:exfat"
+        "0293:ext" "0294:fat" "0295:fscache" "0296:fuse"
+        "0297:gfs2" "0298:nfs_common" "0299:nfsd" "0300:smbfs_common"
+    )
+    for entry in "${FS_TO_DISABLE[@]}"; do
+        local id="${entry%%:*}"
+        local fs="${entry#*:}"
         if ! modprobe -n -v "$fs" | grep -q "install /bin/true" && ! lsmod | grep -q "$fs"; then
-            print_pass "TWGCB-01-012-XXXX: $fs 檔案系統已停用。"
+            print_pass "TWGCB-01-012-${id}: $fs 檔案系統已停用。"
         else
-            print_fail "TWGCB-01-012-XXXX: $fs 檔案系統未停用。應在 /etc/modprobe.d/ 建立設定檔停用。"
+            print_fail "TWGCB-01-012-${id}: $fs 檔案系統未停用。應在 /etc/modprobe.d/ 建立設定檔停用。"
         fi
     done
 }
