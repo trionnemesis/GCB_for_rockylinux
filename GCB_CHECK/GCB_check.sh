@@ -178,14 +178,20 @@ check_filesystem() {
     fi
 
     print_header "磁碟與檔案系統 (3/3)"
-    # 新增項目檢查 from v1.1
-    # TWGCB-01-012-0285 to 0297, 0299-0300: 停用各種檔案系統
-    FS_TO_DISABLE=(freevxfs hfs hfsplus jffs2 afs ceph cifs exfat ext fat fscache fuse gfs2 nfsd)
-    for fs in "${FS_TO_DISABLE[@]}"; do
-        if ! modprobe -n -v "$fs" | grep -q "install /bin/true" && ! lsmod | grep -q "$fs"; then
-            print_pass "TWGCB-01-012-XXXX: $fs 檔案系統已停用。"
+    # 新增項目檢查 (v1.1/v1.2)
+    # TWGCB-01-012-0285 to 0300: 停用各種檔案系統 (對應 ID)
+    declare -A FS_IDS=(
+        [freevxfs]="0285" [hfs]="0286" [hfsplus]="0287" [jffs2]="0288"
+        [afs]="0289" [ceph]="0290" [cifs]="0291" [exfat]="0292"
+        [ext]="0293" [fat]="0294" [fscache]="0295" [fuse]="0296"
+        [gfs2]="0297" [nfs_common]="0298" [nfsd]="0299" [smbfs_common]="0300"
+    )
+    for fs in "${!FS_IDS[@]}"; do
+        local id="TWGCB-01-012-0${FS_IDS[$fs]}"
+        if ! modprobe -n -v "$fs" 2>/dev/null | grep -q "install /bin/true" && ! lsmod | grep -q "^${fs} "; then
+            print_pass "$id: $fs 檔案系統已停用。"
         else
-            print_fail "TWGCB-01-012-XXXX: $fs 檔案系統未停用。應在 /etc/modprobe.d/ 建立設定檔停用。"
+            print_fail "$id: $fs 檔案系統未停用。應在 /etc/modprobe.d/ 建立設定檔停用。"
         fi
     done
 }
@@ -520,6 +526,19 @@ check_ssh() {
     # TWGCB-01-012-0274: SSH UsePAM
     grep -qE "^\s*UsePAM\s+yes" "$SSHD_CONFIG" && print_pass "TWGCB-01-012-0274: SSH UsePAM 已設為 yes。" || print_fail "TWGCB-01-012-0274: SSH UsePAM 未設為 yes。"
 
+    # TWGCB-01-012-0282: 停用 Kerberos 認證
+    grep -qE "^\s*KerberosAuthentication\s+no" "$SSHD_CONFIG" && print_pass "TWGCB-01-012-0282: SSH KerberosAuthentication 已設為 no。" || print_fail "TWGCB-01-012-0282: SSH KerberosAuthentication 未設為 no。"
+
+    # TWGCB-01-012-0283: SSH Banner
+    BANNER_LINE=$(grep -iE "^\s*Banner\s+" "$SSHD_CONFIG" | awk '{print $2}')
+    if [ -n "$BANNER_LINE" ] && [ "$BANNER_LINE" != "none" ] && [ -s "$BANNER_LINE" ]; then
+        print_pass "TWGCB-01-012-0283: SSH Banner 已設定 ($BANNER_LINE)。"
+    else
+        print_fail "TWGCB-01-012-0283: SSH Banner 未設定或檔案不存在。"
+    fi
+
+    # TWGCB-01-012-0315: 停用 GSSAPI 驗證
+    grep -qE "^\s*GSSAPIAuthentication\s+no" "$SSHD_CONFIG" && print_pass "TWGCB-01-012-0315: SSH GSSAPIAuthentication 已設為 no。" || print_fail "TWGCB-01-012-0315: SSH GSSAPIAuthentication 未設為 no。"
 }
 
 print_summary() {

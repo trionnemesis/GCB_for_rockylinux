@@ -2,7 +2,9 @@
 
 #================================================================================
 # Red Hat Enterprise Linux 9 - SSH & PAM Government Configuration Baseline (GCB)
-# 文件版本: TWGCB-01-012 (v1.3)
+# 文件版本: TWGCB-01-012 (v1.2)
+# 來源: 國家資通安全研究院 (NICS) https://www.nics.nat.gov.tw/
+# 對應 NICS 公告日期: 中華民國114年6月12日 (2025-06-12)
 #
 # 新增功能 v3: 腳本啟動時自動備份 sshd_config 與 /etc/pam.d 目錄。
 # 新增功能 v2: 若 sshd 服務重啟失敗，將自動匯出狀態日誌以供除錯。
@@ -198,7 +200,24 @@ set_sshd_config "IgnoreUserKnownHosts" "yes"
 set_sshd_config "PrintLastLog" "yes"
 
 # TWGCB-01-012-0315: 停用 GSSAPI 驗證
-#set_sshd_config "GSSAPIAuthentication" "no"
+set_sshd_config "GSSAPIAuthentication" "no"
+
+# TWGCB-01-012-0282: 停用 Kerberos 認證
+set_sshd_config "KerberosAuthentication" "no"
+
+# TWGCB-01-012-0283: 設定 SSH Banner
+if [ ! -f /etc/issue.net ] || ! grep -q "Authorized" /etc/issue.net 2>/dev/null; then
+    cat > /etc/issue.net <<'BANNER'
+*****************************************************************
+                         Authorized Access Only
+  This system is restricted to authorized users for legitimate
+  business purposes. All activities may be monitored and recorded.
+*****************************************************************
+BANNER
+    chown root:root /etc/issue.net
+    chmod 644 /etc/issue.net
+fi
+set_sshd_config "Banner" "/etc/issue.net"
 
 # TWGCB-01-012-0284: 停用覆寫全系統加密原則
 echo "停用 SSH 覆寫全系統加密原則..."
