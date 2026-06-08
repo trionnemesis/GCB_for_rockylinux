@@ -2,8 +2,9 @@
 
 #================================================================================
 # Red Hat Enterprise Linux 9 - SSH & PAM Government Configuration Baseline (GCB)
-# 文件版本: TWGCB-01-012 (v1.3)
+# 文件依據: TWGCB-01-012 v1.2 (1140612, 2025-06-12 發行)
 #
+# 新增功能 v4: 套用 TWGCB-01-012-0315 (GSSAPIAuthentication=no)
 # 新增功能 v3: 腳本啟動時自動備份 sshd_config 與 /etc/pam.d 目錄。
 # 新增功能 v2: 若 sshd 服務重啟失敗，將自動匯出狀態日誌以供除錯。
 #
@@ -198,7 +199,7 @@ set_sshd_config "IgnoreUserKnownHosts" "yes"
 set_sshd_config "PrintLastLog" "yes"
 
 # TWGCB-01-012-0315: 停用 GSSAPI 驗證
-#set_sshd_config "GSSAPIAuthentication" "no"
+set_sshd_config "GSSAPIAuthentication" "no"
 
 # TWGCB-01-012-0284: 停用覆寫全系統加密原則
 echo "停用 SSH 覆寫全系統加密原則..."
