@@ -2,7 +2,7 @@
 
 #================================================================================
 # Red Hat Enterprise Linux 9 - SSH & PAM Government Configuration Baseline (GCB)
-# 文件版本: TWGCB-01-012 (v1.3)
+# 文件版本: TWGCB-01-012 (v1.2)
 #
 # 新增功能 v3: 腳本啟動時自動備份 sshd_config 與 /etc/pam.d 目錄。
 # 新增功能 v2: 若 sshd 服務重啟失敗，將自動匯出狀態日誌以供除錯。
