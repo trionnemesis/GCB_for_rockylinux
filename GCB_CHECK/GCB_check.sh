@@ -1,15 +1,24 @@
 #!/bin/bash
 
 # ==============================================================================
-# Red Hat Enterprise Linux 9 政府組態基準 (TWGCB-01-012) v1.2 合規性檢測腳本 v2
+# Red Hat Enterprise Linux 9 政府組態基準 (TWGCB-01-012) v1.2 合規性檢測腳本 v2.1
 #
 # 作者: warden
-# 日期: 2025-07-15
+# 日期: 2026-06-11
+# 依據文件: TWGCB-01-012 v1.2 (中華民國 114 年 6 月 12 日發布)
 #
 # 功能更新:
-# 1. 新增日誌匯出功能至 /var/log/
-# 2. 針對 TWGCB-01-012-0063 項目新增檔案數量統計
-# 3. 新增 CLI 統計摘要 (通過/未通過數量與比率)
+# v2.1 (對齊 TWGCB-01-012 v1.2):
+#   1. 修正 0285~0300 檔案系統檢查使用實際規則編號（原為 XXXX 佔位符）
+#   2. 補齊 nfs_common (0298)、smbfs_common (0300) 兩項檢查
+#   3. 修正 0255 SSH Protocol 檢查：OpenSSH 7.4+ 已移除該指令
+#   4. 修正 0235 TMOUT 與 0238 umask 改為涵蓋 /etc/profile.d/ 與 /etc/login.defs
+#   5. 新增 0034、0035 sudo 強化檢查
+#   6. 新增 0221 通行碼雜湊演算法 (SHA512) 檢查
+#   7. 新增 0310 even_deny_root、0311 maxsequence 檢查
+#   8. 新增 0190~0202 cron 設定檔權限檢查
+# v2.0:
+#   - 新增日誌匯出至 /var/log/、檔案統計、CLI 統計摘要
 #
 # 免責聲明: 此腳本僅用於檢測，不會修改任何系統設定。
 # 執行前請詳閱腳本內容。建議以 root 權限執行以獲得最準確的結果。
@@ -37,7 +46,7 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 # Write initial header to log file
-echo "Red Hat Enterprise Linux 9 政府組態基準 (TWGCB-01-012) v1.2 檢測日誌" > "$LOG_FILE"
+echo "Red Hat Enterprise Linux 9 政府組態基準 (TWGCB-01-012) v1.2 檢測日誌 (檢測腳本 v2.1)" > "$LOG_FILE"
 echo "檢測時間: $(date)" >> "$LOG_FILE"
 echo "==============================================================================" >> "$LOG_FILE"
 
@@ -178,14 +187,36 @@ check_filesystem() {
     fi
 
     print_header "磁碟與檔案系統 (3/3)"
-    # 新增項目檢查 from v1.1
-    # TWGCB-01-012-0285 to 0297, 0299-0300: 停用各種檔案系統
-    FS_TO_DISABLE=(freevxfs hfs hfsplus jffs2 afs ceph cifs exfat ext fat fscache fuse gfs2 nfsd)
-    for fs in "${FS_TO_DISABLE[@]}"; do
-        if ! modprobe -n -v "$fs" | grep -q "install /bin/true" && ! lsmod | grep -q "$fs"; then
-            print_pass "TWGCB-01-012-XXXX: $fs 檔案系統已停用。"
+    # TWGCB-01-012-0285 to 0300: 停用各種檔案系統 (v1.2)
+    # 對照表：規則編號 / 檔案系統 / 模組關鍵字（lsmod 比對用，底線變體）
+    declare -A FS_RULES=(
+        ["0285"]="freevxfs|freevxfs"
+        ["0286"]="hfs|hfs"
+        ["0287"]="hfsplus|hfsplus"
+        ["0288"]="jffs2|jffs2"
+        ["0289"]="afs|afs"
+        ["0290"]="ceph|ceph"
+        ["0291"]="cifs|cifs"
+        ["0292"]="exfat|exfat"
+        ["0293"]="ext|ext"
+        ["0294"]="fat|fat"
+        ["0295"]="fscache|fscache"
+        ["0296"]="fuse|fuse"
+        ["0297"]="gfs2|gfs2"
+        ["0298"]="nfs_common|nfs_common"
+        ["0299"]="nfsd|nfsd"
+        ["0300"]="smbfs_common|smbfs_common"
+    )
+    # 依規則編號排序輸出
+    for id in $(printf "%s\n" "${!FS_RULES[@]}" | sort); do
+        local pair="${FS_RULES[$id]}"
+        local fs="${pair%|*}"
+        local mod="${pair#*|}"
+        if ! modprobe -n -v "$fs" 2>/dev/null | grep -q "install /bin/true" \
+           && ! lsmod | awk '{print $1}' | grep -qx "$mod"; then
+            print_pass "TWGCB-01-012-${id}: $fs 檔案系統已停用。"
         else
-            print_fail "TWGCB-01-012-XXXX: $fs 檔案系統未停用。應在 /etc/modprobe.d/ 建立設定檔停用。"
+            print_fail "TWGCB-01-012-${id}: $fs 檔案系統未停用。應在 /etc/modprobe.d/ 建立設定檔停用。"
         fi
     done
 }
@@ -253,6 +284,23 @@ check_system_settings() {
         print_fail "TWGCB-01-012-0032: dnf/yum 設定檔未啟用 gpgcheck。目前: ${GPG_CONF[0]}"
     fi
     print_info "TWGCB-01-012-0032: 提醒：此檢查未包含 /etc/yum.repos.d/ 下的所有 repo 檔案。"
+
+    # TWGCB-01-012-0033: sudo 套件
+    rpm -q sudo &> /dev/null && print_pass "TWGCB-01-012-0033: sudo 套件已安裝。" || print_fail "TWGCB-01-012-0033: sudo 套件未安裝。"
+
+    # TWGCB-01-012-0034: sudo 指令使用 pty
+    if grep -rhsE "^\s*Defaults\s+.*\buse_pty\b" /etc/sudoers /etc/sudoers.d/ 2>/dev/null | grep -q .; then
+        print_pass "TWGCB-01-012-0034: sudo 已設定 use_pty。"
+    else
+        print_fail "TWGCB-01-012-0034: sudo 未設定 use_pty。應於 /etc/sudoers.d/ 加入 'Defaults use_pty'。"
+    fi
+
+    # TWGCB-01-012-0035: sudo 自定義日誌檔案
+    if grep -rhsE "^\s*Defaults\s+logfile\s*=" /etc/sudoers /etc/sudoers.d/ 2>/dev/null | grep -q .; then
+        print_pass "TWGCB-01-012-0035: sudo 已設定自訂日誌檔案。"
+    else
+        print_fail "TWGCB-01-012-0035: sudo 未設定自訂日誌檔案。應加入 'Defaults logfile=\"/var/log/sudo.log\"'。"
+    fi
 
     # TWGCB-01-012-0036: AIDE 套件
     rpm -q aide &> /dev/null && print_pass "TWGCB-01-012-0036: AIDE 套件已安裝。" || print_fail "TWGCB-01-012-0036: AIDE 套件未安裝。"
@@ -433,13 +481,36 @@ check_accounts() {
     else
         print_fail "TWGCB-01-012-0218: 帳戶鎖定閾值 (deny) 為 $DENY，應設定為 1-5 次。"
     fi
-    
+
     # TWGCB-01-012-0219: 帳戶鎖定時間
     UNLOCK_TIME=$(grep '^\s*unlock_time' /etc/security/faillock.conf | awk -F= '{print $2}' | xargs)
     if [[ "$UNLOCK_TIME" -ge 900 ]]; then
         print_pass "TWGCB-01-012-0219: 帳戶鎖定時間 (unlock_time) 為 $UNLOCK_TIME 秒，符合 >= 900 要求。"
     else
         print_fail "TWGCB-01-012-0219: 帳戶鎖定時間 (unlock_time) 為 $UNLOCK_TIME 秒，應 >= 900。"
+    fi
+
+    # TWGCB-01-012-0310: 鎖定 root 帳號之失敗登入 (even_deny_root)
+    if grep -qE '^\s*even_deny_root\b' /etc/security/faillock.conf; then
+        print_pass "TWGCB-01-012-0310: faillock 已啟用 even_deny_root。"
+    else
+        print_fail "TWGCB-01-012-0310: faillock 未啟用 even_deny_root。"
+    fi
+
+    # TWGCB-01-012-0311: 通行碼禁止使用連續字元 (maxsequence)
+    MAXSEQ=$(grep -E '^\s*maxsequence' /etc/security/pwquality.conf 2>/dev/null | awk -F= '{print $2}' | xargs)
+    if [[ -n "$MAXSEQ" && "$MAXSEQ" -gt 0 && "$MAXSEQ" -le 3 ]]; then
+        print_pass "TWGCB-01-012-0311: 通行碼 maxsequence 為 $MAXSEQ，符合 1-3 要求。"
+    else
+        print_fail "TWGCB-01-012-0311: 通行碼 maxsequence 為 ${MAXSEQ:-未設定}，應設定為 1-3。"
+    fi
+
+    # TWGCB-01-012-0221: 通行碼雜湊演算法為 SHA512
+    ENC_METHOD=$(awk '/^\s*ENCRYPT_METHOD/{print $2}' /etc/login.defs)
+    if [[ "$ENC_METHOD" == "SHA512" ]] || grep -qE '^\s*password\s+sufficient\s+pam_unix\.so\s+.*\bsha512\b' /etc/pam.d/system-auth 2>/dev/null; then
+        print_pass "TWGCB-01-012-0221: 通行碼雜湊演算法為 SHA512。"
+    else
+        print_fail "TWGCB-01-012-0221: 通行碼雜湊演算法未設定為 SHA512 (login.defs: ${ENC_METHOD:-未設定})。"
     fi
 
     print_header "帳號與存取控制 (2/2)"
@@ -461,21 +532,65 @@ check_accounts() {
     fi
     print_info "TWGCB-01-012-0224: 提醒：此設定對既有使用者需使用 'chage' 指令個別設定。"
 
-    # TWGCB-01-012-0235: Bash shell 閒置登出時間
-    TMOUT_VAL=$(grep -E '^\s*readonly TMOUT=' /etc/profile /etc/bashrc 2>/dev/null | tail -1 | grep -o '[0-9]*')
-    if [[ "$TMOUT_VAL" -gt 0 && "$TMOUT_VAL" -le 900 ]]; then
+    # TWGCB-01-012-0235: Bash shell 閒置登出時間 (含 /etc/profile.d/*.sh)
+    TMOUT_VAL=$(grep -Eh '^\s*(readonly\s+)?TMOUT=' \
+                /etc/profile /etc/bashrc /etc/profile.d/*.sh 2>/dev/null \
+                | tail -1 | grep -oE '[0-9]+' | head -n1)
+    if [[ -n "$TMOUT_VAL" && "$TMOUT_VAL" -gt 0 && "$TMOUT_VAL" -le 900 ]]; then
         print_pass "TWGCB-01-012-0235: Bash shell 閒置登出時間為 $TMOUT_VAL 秒，符合 1-900 秒要求。"
     else
-        print_fail "TWGCB-01-012-0235: Bash shell 閒置登出時間未設定或不符要求 (目前: $TMOUT_VAL)，應設定在 1-900 秒內。"
+        print_fail "TWGCB-01-012-0235: Bash shell 閒置登出時間未設定或不符要求 (目前: ${TMOUT_VAL:-未設定})，應設定在 1-900 秒內。"
     fi
 
-    # TWGCB-01-012-0238: 使用者帳號預設 umask
-    UMASK_VAL=$(grep '^\s*umask' /etc/profile /etc/bashrc | tail -n1 | awk '{print $2}')
-    if [[ "$UMASK_VAL" == "027" || "$UMASK_VAL" == "077" ]]; then
-        print_pass "TWGCB-01-012-0238: 使用者預設 umask 為 $UMASK_VAL，符合 027 或更嚴格要求。"
+    # TWGCB-01-012-0238: 使用者帳號預設 umask (含 /etc/profile.d/*.sh 與 /etc/login.defs)
+    UMASK_VAL=$(grep -Eh '^\s*umask\s+' \
+                /etc/profile /etc/bashrc /etc/profile.d/*.sh 2>/dev/null \
+                | awk '{print $2}' | tail -n1)
+    LOGIN_UMASK=$(awk '/^\s*UMASK/ {print $2}' /etc/login.defs 2>/dev/null)
+    if [[ "$UMASK_VAL" =~ ^0?(027|077|0[2367]7)$ ]] && \
+       [[ -z "$LOGIN_UMASK" || "$LOGIN_UMASK" =~ ^0?(027|077|0[2367]7)$ ]]; then
+        print_pass "TWGCB-01-012-0238: 使用者預設 umask 為 $UMASK_VAL (login.defs: ${LOGIN_UMASK:-未設定})，符合 027 或更嚴格要求。"
     else
-        print_fail "TWGCB-01-012-0238: 使用者預設 umask 為 $UMASK_VAL，應為 027 或更嚴格。"
+        print_fail "TWGCB-01-012-0238: 使用者預設 umask 為 ${UMASK_VAL:-未設定} (login.defs: ${LOGIN_UMASK:-未設定})，應為 027 或更嚴格。"
     fi
+}
+
+# cron 與 at 權限
+check_cron() {
+    print_header "cron 與 at"
+
+    # TWGCB-01-012-0189: crond 啟用
+    if systemctl is-enabled crond &> /dev/null; then
+        print_pass "TWGCB-01-012-0189: crond 服務已啟用。"
+    else
+        print_fail "TWGCB-01-012-0189: crond 服務未啟用。"
+    fi
+
+    # TWGCB-01-012-0190/0191: /etc/crontab
+    check_file_perms_owner "TWGCB-01-012-0190/91" "/etc/crontab" "600" "root:root"
+
+    # TWGCB-01-012-0192~0201: cron 子目錄
+    for d in /etc/cron.hourly /etc/cron.daily /etc/cron.weekly /etc/cron.monthly /etc/cron.d; do
+        [ -d "$d" ] && check_file_perms_owner "TWGCB-01-012-0192~0201" "$d" "700" "root:root"
+    done
+
+    # TWGCB-01-012-0202/0203: cron.allow / at.allow 存在且權限正確
+    for f in /etc/cron.allow /etc/at.allow; do
+        if [ -f "$f" ]; then
+            check_file_perms_owner "TWGCB-01-012-0202/03" "$f" "600" "root:root"
+        else
+            print_fail "TWGCB-01-012-0202/03: ${f} 不存在。應建立並設定 600 root:root。"
+        fi
+    done
+
+    # TWGCB-01-012-0202/0203: cron.deny / at.deny 不應存在
+    for f in /etc/cron.deny /etc/at.deny; do
+        if [ -e "$f" ]; then
+            print_fail "TWGCB-01-012-0202/03: ${f} 仍存在，應刪除。"
+        else
+            print_pass "TWGCB-01-012-0202/03: ${f} 已刪除。"
+        fi
+    done
 }
 
 # SSH 伺服器
@@ -489,7 +604,18 @@ check_ssh() {
     fi
     
     # TWGCB-01-012-0255: SSH 協定版本
-    grep -qE "^\s*Protocol\s+2" "$SSHD_CONFIG" && print_pass "TWGCB-01-012-0255: SSH 協定版本已設為 2。" || print_fail "TWGCB-01-012-0255: SSH 協定版本未設為 2。"
+    # 註：OpenSSH 7.4+ 已將 Protocol 2 設為唯一支援版本並移除該指令；
+    # 若 sshd_config 仍顯式設定，需為 2；若無設定則依預設視為合規。
+    if grep -qE "^\s*Protocol\s+" "$SSHD_CONFIG"; then
+        if grep -qE "^\s*Protocol\s+2\s*$" "$SSHD_CONFIG"; then
+            print_pass "TWGCB-01-012-0255: SSH 協定版本已設為 2。"
+        else
+            print_fail "TWGCB-01-012-0255: SSH 協定版本未設為 2。"
+        fi
+    else
+        SSHD_VER=$(sshd -V 2>&1 | grep -oE "OpenSSH_[0-9]+\.[0-9]+" | head -n1)
+        print_pass "TWGCB-01-012-0255: sshd_config 未顯式設定 Protocol，現行版本 (${SSHD_VER:-未知}) 預設僅支援 Protocol 2。"
+    fi
 
     # TWGCB-01-012-0256 & 0257: sshd_config 檔案權限
     check_file_perms_owner "TWGCB-01-012-0256/57" "$SSHD_CONFIG" "600" "root:root"
@@ -564,6 +690,7 @@ main() {
     check_network
     check_selinux
     check_accounts
+    check_cron
     check_ssh
 
     print_summary
