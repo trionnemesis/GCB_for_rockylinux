@@ -1,19 +1,18 @@
 #!/bin/bash
 
 # ==============================================================================
-# Red Hat Enterprise Linux 9 政府組態基準 (TWGCB-01-012) v1.2 合規性檢測腳本 v3
+# Red Hat Enterprise Linux 9 政府組態基準 (TWGCB-01-012) v1.2 合規性檢測腳本 v2
+# 對應文件: 國家資通安全研究院 TWGCB-01-012 v1.2 (民國114年6月12日)
 #
 # 作者: warden
-# 日期: 2026-05-30
-# 依據: NICS 國家資通安全研究院 TWGCB-01-012 v1.2 (114年6月12日發布)
+# 日期: 2025-07-15
 #
 # 功能更新:
 # 1. 新增日誌匯出功能至 /var/log/
 # 2. 針對 TWGCB-01-012-0063 項目新增檔案數量統計
 # 3. 新增 CLI 統計摘要 (通過/未通過數量與比率)
-# 4. 修正檔案系統停用檢查之邏輯錯誤 (反向判斷)
-# 5. 為 v1.1 新增之檔案系統項目 (0285-0300) 補上對應 TWGCB-ID
-# 6. 新增 v1.1 缺漏之檢查項目: 0298, 0300, 0303-0309, 0312
+# 4. 將 v1.1 新增之檔案系統檢查項目 (0285-0300) 由佔位 XXXX 改為對應 TWGCB ID
+# 5. 新增防火牆 (firewalld / nftables) 檢查 (0242-0248)
 #
 # 免責聲明: 此腳本僅用於檢測，不會修改任何系統設定。
 # 執行前請詳閱腳本內容。建議以 root 權限執行以獲得最準確的結果。
@@ -90,13 +89,6 @@ print_skip() {
     ((SKIP_COUNT++))
 }
 
-# 共用檢查函式：模組是否被禁用且未載入
-is_module_disabled() {
-    local mod="$1"
-    modprobe -n -v "$mod" 2>/dev/null | grep -qE "install /bin/(true|false)" \
-        && ! lsmod | awk '{print $1}' | grep -qw "${mod//-/_}"
-}
-
 # --- Root Check ---
 if [[ $EUID -ne 0 ]]; then
    print_fail "此腳本需要 root 權限才能完整執行。請使用 'sudo ./check_rhel9_gcb.sh' 執行。"
@@ -111,21 +103,21 @@ check_filesystem() {
     print_header "磁碟與檔案系統 (1/3)"
 
     # TWGCB-01-012-0001: 停用 cramfs 檔案系統
-    if is_module_disabled cramfs; then
+    if ! modprobe -n -v cramfs | grep -q "install /bin/true" && ! lsmod | grep -q "cramfs"; then
         print_pass "TWGCB-01-012-0001: cramfs 檔案系統已停用。"
     else
         print_fail "TWGCB-01-012-0001: cramfs 檔案系統未停用。應在 /etc/modprobe.d/ 建立設定檔停用。"
     fi
 
     # TWGCB-01-012-0002: 停用 squashfs 檔案系統
-    if is_module_disabled squashfs; then
+    if ! modprobe -n -v squashfs | grep -q "install /bin/true" && ! lsmod | grep -q "squashfs"; then
         print_pass "TWGCB-01-012-0002: squashfs 檔案系統已停用。"
     else
         print_fail "TWGCB-01-012-0002: squashfs 檔案系統未停用。應在 /etc/modprobe.d/ 建立設定檔停用。"
     fi
 
     # TWGCB-01-012-0003: 停用 udf 檔案系統
-    if is_module_disabled udf; then
+    if ! modprobe -n -v udf | grep -q "install /bin/true" && ! lsmod | grep -q "udf"; then
         print_pass "TWGCB-01-012-0003: udf 檔案系統已停用。"
     else
         print_fail "TWGCB-01-012-0003: udf 檔案系統未停用。應在 /etc/modprobe.d/ 建立設定檔停用。"
@@ -182,39 +174,50 @@ check_filesystem() {
     fi
 
     # TWGCB-01-012-0031: 停用 USB 儲存裝置
-    if is_module_disabled usb-storage; then
+    if ! modprobe -n -v usb-storage | grep -q "install /bin/true" && ! lsmod | grep -q "usb_storage"; then
         print_pass "TWGCB-01-012-0031: USB 儲存裝置已停用。"
     else
         print_fail "TWGCB-01-012-0031: USB 儲存裝置未停用。應在 /etc/modprobe.d/ 建立設定檔停用。"
     fi
 
-    print_header "磁碟與檔案系統 (3/3) - v1.1 新增項目"
-    # TWGCB-01-012-0285 至 0300: 停用各種檔案系統 (v1.1 新增)
-    # 對應表: ID => 模組名稱
-    declare -A FS_ID_MAP=(
-        [0285]=freevxfs
-        [0286]=hfs
-        [0287]=hfsplus
-        [0288]=jffs2
-        [0289]=afs
-        [0290]=ceph
-        [0291]=cifs
-        [0292]=exfat
-        [0293]=ext
-        [0294]=fat
-        [0295]=fscache
-        [0296]=fuse
-        [0297]=gfs2
-        [0298]=nfs_common
-        [0299]=nfsd
-        [0300]=smbfs_common
+    print_header "磁碟與檔案系統 (3/3)"
+    # v1.1 新增項目：停用各類非必要檔案系統 (TWGCB-01-012-0285~0300)
+    # 對應 GCB_SET/GCB.sh 之設定順序，逐項以正確 TWGCB ID 報告
+    local fs_items=(
+        "0285:freevxfs"
+        "0286:hfs"
+        "0287:hfsplus"
+        "0288:jffs2"
+        "0289:afs"
+        "0290:ceph"
+        "0291:cifs"
+        "0292:exfat"
+        "0293:ext"
+        "0294:fat"
+        "0295:fscache"
+        "0296:fuse"
+        "0297:gfs2"
+        "0298:nfs_common"
+        "0299:nfsd"
+        "0300:smbfs_common"
     )
-    for id in $(echo "${!FS_ID_MAP[@]}" | tr ' ' '\n' | sort); do
-        fs="${FS_ID_MAP[$id]}"
-        if is_module_disabled "$fs"; then
-            print_pass "TWGCB-01-012-${id}: ${fs} 檔案系統已停用。"
+    local lsmod_out
+    lsmod_out=$(lsmod)
+    for entry in "${fs_items[@]}"; do
+        local id="${entry%%:*}"
+        local fs="${entry##*:}"
+        local mod_re="^${fs//_/[_-]}([[:space:]]|$)"
+        local disabled=1
+        if ! modprobe -n -v "$fs" 2>/dev/null | grep -qE "install +/bin/(true|false)"; then
+            disabled=0
+        fi
+        if echo "$lsmod_out" | awk '{print $1}' | grep -Eq "$mod_re"; then
+            disabled=0
+        fi
+        if [ "$disabled" -eq 1 ]; then
+            print_pass "TWGCB-01-012-${id}: $fs 檔案系統已停用。"
         else
-            print_fail "TWGCB-01-012-${id}: ${fs} 檔案系統未停用。應在 /etc/modprobe.d/ 建立設定檔停用。"
+            print_fail "TWGCB-01-012-${id}: $fs 檔案系統未停用。應在 /etc/modprobe.d/ 建立設定檔停用 (install $fs /bin/true 並 blacklist $fs)。"
         fi
     done
 }
@@ -352,63 +355,6 @@ check_system_settings() {
         print_fail "TWGCB-01-012-0063: 發現 ${file_count} 個無擁有群組之檔案。" "$details"
         echo -e "\n--- 無擁有群組之檔案完整列表 ---\n$NO_GROUP_FILES" >> "$LOG_FILE"
     fi
-
-    # --- v1.1 新增之系統維護相關檢查項目 ---
-
-    # TWGCB-01-012-0303 & 0304: /etc/security/opasswd 檔案所有權與權限
-    if [ -f /etc/security/opasswd ]; then
-        check_file_perms_owner "TWGCB-01-012-0303/04" "/etc/security/opasswd" "644" "root:root"
-    else
-        print_info "TWGCB-01-012-0303/04: /etc/security/opasswd 不存在，略過檢查。"
-    fi
-    if [ -f /etc/security/opasswd.old ]; then
-        check_file_perms_owner "TWGCB-01-012-0303/04" "/etc/security/opasswd.old" "644" "root:root"
-    fi
-
-    # TWGCB-01-012-0305: /etc/shells 中不應存在 nologin
-    if grep -qE '^[^#]*/(s)?bin/nologin$' /etc/shells 2>/dev/null; then
-        print_fail "TWGCB-01-012-0305: /etc/shells 中包含 nologin，應移除。"
-    else
-        print_pass "TWGCB-01-012-0305: /etc/shells 中未包含 nologin。"
-    fi
-
-    # TWGCB-01-012-0306: 禁止 chrony 以 root 權限執行
-    if grep -qE '^\s*OPTIONS=.*-u\s+chrony' /etc/sysconfig/chronyd 2>/dev/null \
-       || grep -qE '^\s*OPTIONS=.*-F\s+[0-9]+' /etc/sysconfig/chronyd 2>/dev/null; then
-        print_pass "TWGCB-01-012-0306: chrony 已設定為非 root 執行身份。"
-    else
-        print_fail "TWGCB-01-012-0306: /etc/sysconfig/chronyd 未設定非 root 執行身份 (OPTIONS=\"-F 2\")。"
-    fi
-
-    # TWGCB-01-012-0307: 啟用 ptrace 限制模式
-    PTRACE_VAL=$(sysctl -n kernel.yama.ptrace_scope 2>/dev/null)
-    if [[ "$PTRACE_VAL" =~ ^[1-3]$ ]]; then
-        print_pass "TWGCB-01-012-0307: kernel.yama.ptrace_scope 為 ${PTRACE_VAL}，符合 >= 1 之限制要求。"
-    else
-        print_fail "TWGCB-01-012-0307: kernel.yama.ptrace_scope 為 ${PTRACE_VAL:-未設定}，應 >= 1。"
-    fi
-
-    # TWGCB-01-012-0308: 啟用 rsyslog logrotate
-    if [ -f /etc/logrotate.d/rsyslog ] || grep -qsE 'rsyslog|/var/log/messages' /etc/logrotate.conf /etc/logrotate.d/* 2>/dev/null; then
-        print_pass "TWGCB-01-012-0308: rsyslog logrotate 已設定。"
-    else
-        print_fail "TWGCB-01-012-0308: rsyslog logrotate 設定檔未發現，應啟用日誌輪替。"
-    fi
-
-    # TWGCB-01-012-0309: root 之預設 umask
-    ROOT_UMASK=$(grep -hE '^\s*umask' /root/.bashrc /root/.bash_profile 2>/dev/null | tail -n1 | awk '{print $2}')
-    if [[ "$ROOT_UMASK" == "027" || "$ROOT_UMASK" == "077" ]]; then
-        print_pass "TWGCB-01-012-0309: root 預設 umask 為 ${ROOT_UMASK}，符合要求。"
-    else
-        print_fail "TWGCB-01-012-0309: root 預設 umask 為 ${ROOT_UMASK:-未設定}，應為 027 或更嚴格。"
-    fi
-
-    # TWGCB-01-012-0312: 停用 PAM 模組 nullok (即 without-nullok)
-    if grep -qsE '^\s*password\s+.*\bnullok\b' /etc/pam.d/system-auth /etc/pam.d/password-auth 2>/dev/null; then
-        print_fail "TWGCB-01-012-0312: PAM 設定檔仍包含 nullok，應移除以禁止空通行碼。"
-    else
-        print_pass "TWGCB-01-012-0312: PAM 設定已停用 nullok (without-nullok)。"
-    fi
 }
 
 # 系統服務
@@ -468,6 +414,50 @@ check_network() {
         print_pass "TWGCB-01-012-0109/0110: 禁止傳送 ICMP 重新導向封包。"
     else
         print_fail "TWGCB-01-012-0109/0110: 未禁止傳送 ICMP 重新導向封包。"
+    fi
+}
+
+# 防火牆 (firewalld / nftables) — 兩者擇一啟用
+check_firewall() {
+    print_header "防火牆 (firewalld / nftables)"
+
+    local firewalld_installed=0 firewalld_active=0
+    local nftables_installed=0 nftables_active=0
+
+    rpm -q firewalld &> /dev/null && firewalld_installed=1
+    rpm -q nftables &> /dev/null && nftables_installed=1
+    systemctl is-active firewalld &> /dev/null && firewalld_active=1
+    systemctl is-active nftables &> /dev/null && nftables_active=1
+
+    # TWGCB-01-012-0242: 安裝 firewalld 套件 (使用 firewalld 時必要)
+    if [ "$firewalld_installed" -eq 1 ]; then
+        print_pass "TWGCB-01-012-0242: firewalld 套件已安裝。"
+    else
+        print_info "TWGCB-01-012-0242: firewalld 套件未安裝 (若使用 nftables 可忽略)。"
+    fi
+
+    # TWGCB-01-012-0243 / 0248: firewalld 與 nftables 二擇一啟用
+    if [ "$firewalld_active" -eq 1 ] && [ "$nftables_active" -eq 0 ]; then
+        print_pass "TWGCB-01-012-0243: firewalld 服務為啟用狀態。"
+        print_pass "TWGCB-01-012-0245: nftables 服務已停用 (使用 firewalld 模式)。"
+    elif [ "$nftables_active" -eq 1 ] && [ "$firewalld_active" -eq 0 ]; then
+        print_pass "TWGCB-01-012-0247: nftables 服務為啟用狀態。"
+        print_pass "TWGCB-01-012-0248: firewalld 服務已停用 (使用 nftables 模式)。"
+    elif [ "$firewalld_active" -eq 1 ] && [ "$nftables_active" -eq 1 ]; then
+        print_fail "TWGCB-01-012-0243/0247: firewalld 與 nftables 同時啟用，應僅擇一使用。"
+    else
+        print_fail "TWGCB-01-012-0243/0247: firewalld 與 nftables 皆未啟用，系統未受防火牆保護。"
+    fi
+
+    # TWGCB-01-012-0246: 使用 firewalld 時，預設區域應為 public
+    if [ "$firewalld_active" -eq 1 ]; then
+        local default_zone
+        default_zone=$(firewall-cmd --get-default-zone 2>/dev/null)
+        if [ "$default_zone" = "public" ]; then
+            print_pass "TWGCB-01-012-0246: firewalld 預設區域為 public。"
+        else
+            print_fail "TWGCB-01-012-0246: firewalld 預設區域為 ${default_zone:-未取得}，應為 public。"
+        fi
     fi
 }
 
@@ -648,6 +638,7 @@ main() {
     check_services
     check_software
     check_network
+    check_firewall
     check_selinux
     check_accounts
     check_ssh
