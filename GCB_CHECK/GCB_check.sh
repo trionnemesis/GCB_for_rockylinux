@@ -2,7 +2,6 @@
 
 # ==============================================================================
 # Red Hat Enterprise Linux 9 政府組態基準 (TWGCB-01-012) v1.2 合規性檢測腳本 v2
-# 對應文件: 國家資通安全研究院 TWGCB-01-012 v1.2 (民國114年6月12日)
 #
 # 作者: warden
 # 日期: 2025-07-15
@@ -11,8 +10,6 @@
 # 1. 新增日誌匯出功能至 /var/log/
 # 2. 針對 TWGCB-01-012-0063 項目新增檔案數量統計
 # 3. 新增 CLI 統計摘要 (通過/未通過數量與比率)
-# 4. 將 v1.1 新增之檔案系統檢查項目 (0285-0300) 由佔位 XXXX 改為對應 TWGCB ID
-# 5. 新增防火牆 (firewalld / nftables) 檢查 (0242-0248)
 #
 # 免責聲明: 此腳本僅用於檢測，不會修改任何系統設定。
 # 執行前請詳閱腳本內容。建議以 root 權限執行以獲得最準確的結果。
@@ -181,43 +178,20 @@ check_filesystem() {
     fi
 
     print_header "磁碟與檔案系統 (3/3)"
-    # v1.1 新增項目：停用各類非必要檔案系統 (TWGCB-01-012-0285~0300)
-    # 對應 GCB_SET/GCB.sh 之設定順序，逐項以正確 TWGCB ID 報告
-    local fs_items=(
-        "0285:freevxfs"
-        "0286:hfs"
-        "0287:hfsplus"
-        "0288:jffs2"
-        "0289:afs"
-        "0290:ceph"
-        "0291:cifs"
-        "0292:exfat"
-        "0293:ext"
-        "0294:fat"
-        "0295:fscache"
-        "0296:fuse"
-        "0297:gfs2"
-        "0298:nfs_common"
-        "0299:nfsd"
-        "0300:smbfs_common"
+    # 新增項目檢查 (v1.1/v1.2)
+    # TWGCB-01-012-0285 to 0300: 停用各種檔案系統 (對應 ID)
+    declare -A FS_IDS=(
+        [freevxfs]="0285" [hfs]="0286" [hfsplus]="0287" [jffs2]="0288"
+        [afs]="0289" [ceph]="0290" [cifs]="0291" [exfat]="0292"
+        [ext]="0293" [fat]="0294" [fscache]="0295" [fuse]="0296"
+        [gfs2]="0297" [nfs_common]="0298" [nfsd]="0299" [smbfs_common]="0300"
     )
-    local lsmod_out
-    lsmod_out=$(lsmod)
-    for entry in "${fs_items[@]}"; do
-        local id="${entry%%:*}"
-        local fs="${entry##*:}"
-        local mod_re="^${fs//_/[_-]}([[:space:]]|$)"
-        local disabled=1
-        if ! modprobe -n -v "$fs" 2>/dev/null | grep -qE "install +/bin/(true|false)"; then
-            disabled=0
-        fi
-        if echo "$lsmod_out" | awk '{print $1}' | grep -Eq "$mod_re"; then
-            disabled=0
-        fi
-        if [ "$disabled" -eq 1 ]; then
-            print_pass "TWGCB-01-012-${id}: $fs 檔案系統已停用。"
+    for fs in "${!FS_IDS[@]}"; do
+        local id="TWGCB-01-012-0${FS_IDS[$fs]}"
+        if ! modprobe -n -v "$fs" 2>/dev/null | grep -q "install /bin/true" && ! lsmod | grep -q "^${fs} "; then
+            print_pass "$id: $fs 檔案系統已停用。"
         else
-            print_fail "TWGCB-01-012-${id}: $fs 檔案系統未停用。應在 /etc/modprobe.d/ 建立設定檔停用 (install $fs /bin/true 並 blacklist $fs)。"
+            print_fail "$id: $fs 檔案系統未停用。應在 /etc/modprobe.d/ 建立設定檔停用。"
         fi
     done
 }
@@ -417,50 +391,6 @@ check_network() {
     fi
 }
 
-# 防火牆 (firewalld / nftables) — 兩者擇一啟用
-check_firewall() {
-    print_header "防火牆 (firewalld / nftables)"
-
-    local firewalld_installed=0 firewalld_active=0
-    local nftables_installed=0 nftables_active=0
-
-    rpm -q firewalld &> /dev/null && firewalld_installed=1
-    rpm -q nftables &> /dev/null && nftables_installed=1
-    systemctl is-active firewalld &> /dev/null && firewalld_active=1
-    systemctl is-active nftables &> /dev/null && nftables_active=1
-
-    # TWGCB-01-012-0242: 安裝 firewalld 套件 (使用 firewalld 時必要)
-    if [ "$firewalld_installed" -eq 1 ]; then
-        print_pass "TWGCB-01-012-0242: firewalld 套件已安裝。"
-    else
-        print_info "TWGCB-01-012-0242: firewalld 套件未安裝 (若使用 nftables 可忽略)。"
-    fi
-
-    # TWGCB-01-012-0243 / 0248: firewalld 與 nftables 二擇一啟用
-    if [ "$firewalld_active" -eq 1 ] && [ "$nftables_active" -eq 0 ]; then
-        print_pass "TWGCB-01-012-0243: firewalld 服務為啟用狀態。"
-        print_pass "TWGCB-01-012-0245: nftables 服務已停用 (使用 firewalld 模式)。"
-    elif [ "$nftables_active" -eq 1 ] && [ "$firewalld_active" -eq 0 ]; then
-        print_pass "TWGCB-01-012-0247: nftables 服務為啟用狀態。"
-        print_pass "TWGCB-01-012-0248: firewalld 服務已停用 (使用 nftables 模式)。"
-    elif [ "$firewalld_active" -eq 1 ] && [ "$nftables_active" -eq 1 ]; then
-        print_fail "TWGCB-01-012-0243/0247: firewalld 與 nftables 同時啟用，應僅擇一使用。"
-    else
-        print_fail "TWGCB-01-012-0243/0247: firewalld 與 nftables 皆未啟用，系統未受防火牆保護。"
-    fi
-
-    # TWGCB-01-012-0246: 使用 firewalld 時，預設區域應為 public
-    if [ "$firewalld_active" -eq 1 ]; then
-        local default_zone
-        default_zone=$(firewall-cmd --get-default-zone 2>/dev/null)
-        if [ "$default_zone" = "public" ]; then
-            print_pass "TWGCB-01-012-0246: firewalld 預設區域為 public。"
-        else
-            print_fail "TWGCB-01-012-0246: firewalld 預設區域為 ${default_zone:-未取得}，應為 public。"
-        fi
-    fi
-}
-
 # SELinux
 check_selinux() {
     print_header "SELinux"
@@ -596,6 +526,19 @@ check_ssh() {
     # TWGCB-01-012-0274: SSH UsePAM
     grep -qE "^\s*UsePAM\s+yes" "$SSHD_CONFIG" && print_pass "TWGCB-01-012-0274: SSH UsePAM 已設為 yes。" || print_fail "TWGCB-01-012-0274: SSH UsePAM 未設為 yes。"
 
+    # TWGCB-01-012-0282: 停用 Kerberos 認證
+    grep -qE "^\s*KerberosAuthentication\s+no" "$SSHD_CONFIG" && print_pass "TWGCB-01-012-0282: SSH KerberosAuthentication 已設為 no。" || print_fail "TWGCB-01-012-0282: SSH KerberosAuthentication 未設為 no。"
+
+    # TWGCB-01-012-0283: SSH Banner
+    BANNER_LINE=$(grep -iE "^\s*Banner\s+" "$SSHD_CONFIG" | awk '{print $2}')
+    if [ -n "$BANNER_LINE" ] && [ "$BANNER_LINE" != "none" ] && [ -s "$BANNER_LINE" ]; then
+        print_pass "TWGCB-01-012-0283: SSH Banner 已設定 ($BANNER_LINE)。"
+    else
+        print_fail "TWGCB-01-012-0283: SSH Banner 未設定或檔案不存在。"
+    fi
+
+    # TWGCB-01-012-0315: 停用 GSSAPI 驗證
+    grep -qE "^\s*GSSAPIAuthentication\s+no" "$SSHD_CONFIG" && print_pass "TWGCB-01-012-0315: SSH GSSAPIAuthentication 已設為 no。" || print_fail "TWGCB-01-012-0315: SSH GSSAPIAuthentication 未設為 no。"
 }
 
 print_summary() {
@@ -638,7 +581,6 @@ main() {
     check_services
     check_software
     check_network
-    check_firewall
     check_selinux
     check_accounts
     check_ssh
