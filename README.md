@@ -337,7 +337,11 @@ sudo /usr/local/apache/bin/apachectl restart
 ---
 
 **維護者**：warden  
-**最後更新**：2025-01-15  
-**版本**：2.0
+**最後更新**：2026-05-24  
+**版本**：2.1
+
+> 已對照國家資通安全研究院 (NICS) 最新發布之 GCB 說明文件確認：
+> `TWGCB-01-012` (RHEL 9 伺服器) 與 `TWGCB-04-007` (Apache HTTP Server 2.4)
+> 目前最新版本皆為 **v1.2**，本工具集已對應此版本規則。
 
 如有問題或建議，請透過 GitHub Issues 回報。

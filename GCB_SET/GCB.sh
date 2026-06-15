@@ -277,7 +277,8 @@ apply_system_settings() {
     run_dnf "dnf install -y aide" "aide"
     aide --init
     mv -f /var/lib/aide/aide.db.new.gz /var/lib/aide/aide.db.gz
-    echo "0 5 * * * /usr/sbin/aide --check" > /etc/cron.d/aide_check
+    # /etc/cron.d 條目必須包含執行身分欄位 (user)，否則 cron 會略過此行
+    echo "0 5 * * * root /usr/sbin/aide --check" > /etc/cron.d/aide_check
 
     echo "[*] TWGCB-01-012-0038: 設定開機載入程式設定檔之所有權..."
     chown root:root /boot/grub2/grub.cfg

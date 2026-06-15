@@ -264,8 +264,12 @@ check_system_settings() {
     # TWGCB-01-012-0036: AIDE 套件
     rpm -q aide &> /dev/null && print_pass "TWGCB-01-012-0036: AIDE 套件已安裝。" || print_fail "TWGCB-01-012-0036: AIDE 套件未安裝。"
     
-    # TWGCB-01-012-0037: 定期 AIDE 檢查
-    crontab -u root -l | grep -q "aide --check" &>/dev/null && print_pass "TWGCB-01-012-0037: root 的 crontab 中已設定 AIDE 定期檢查。" || print_fail "TWGCB-01-012-0037: root 的 crontab 中未設定 AIDE 定期檢查。"
+    # TWGCB-01-012-0037: 定期 AIDE 檢查 (可能設定於 root crontab、/etc/crontab 或 /etc/cron.d/)
+    if { crontab -u root -l 2>/dev/null; cat /etc/crontab /etc/cron.d/* 2>/dev/null; } | grep -q "aide --check"; then
+        print_pass "TWGCB-01-012-0037: 已設定 AIDE 定期檢查。"
+    else
+        print_fail "TWGCB-01-012-0037: 未設定 AIDE 定期檢查 (請檢查 root crontab、/etc/crontab 或 /etc/cron.d/)。"
+    fi
 
     # TWGCB-01-012-0038 & 0039: GRUB 設定檔權限
     check_file_perms_owner "TWGCB-01-012-0038/39" "/boot/grub2/grub.cfg" "600" "root:root"

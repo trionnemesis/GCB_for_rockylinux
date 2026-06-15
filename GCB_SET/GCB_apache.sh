@@ -279,8 +279,8 @@ cat <<'EOF' > "${SSL_DATA_DIR}/01-ssl-ciphers.conf"
 SSLHonorCipherOrder On
 
 # GCB TWGCB-04-007-0043: 設定強健的加密演算法套件 (Cipher Suite)
-# 支援 Perfect Forward Secrecy (PFS)
-SSLCipherSuite ECDHE:DHE:!NULL:!LOW:!SSLv2:!MD5:!RC4:!aNULL
+# 支援 Perfect Forward Secrecy (PFS)，並停用匯出級 (EXP) 等弱加密演算法
+SSLCipherSuite ECDHE:DHE:!EXP:!NULL:!LOW:!SSLv2:!MD5:!RC4:!aNULL
 EOF
 
 log "TWGCB-04-007-0044, 0045, 0046: 建立其他 SSL 選項設定檔 (02-ssl-options.conf)... "
