@@ -22,9 +22,16 @@
 
 **目的**：簡化並加速 Rocky Linux 9 系統的 GCB 安全性設定與檢測流程，透過自動化腳本減少人為疏失，確保設定一致性。
 
-**依據文件**：
-- `TWGCB-01-012` Red Hat Enterprise Linux 9 政府組態基準說明文件(伺服器) v1.2
-- `TWGCB-04-007` Apache HTTP Server 2.4 政府組態基準說明文件 v1.2
+**依據文件**（依國家資通安全研究院 NICS 公告之最新版本）：
+- `TWGCB-01-012` Red Hat Enterprise Linux 9 政府組態基準說明文件(伺服器) **v1.2**（中華民國114年6月／2025-06-12 發布）
+- `TWGCB-04-007` Apache HTTP Server 2.4 政府組態基準說明文件 **v1.2**（中華民國111年12月／2022-12-26 發布）
+
+> 來源：[國家資通安全研究院 - GCB 說明文件](https://www.nics.nat.gov.tw/core_business/cybersecurity_defense/GCB/GCB_Documentation/)
+
+**TWGCB-01-012 版本沿革**：
+- v1.0（2023-12-07）：初版
+- v1.1（2025-03-11）：新增 31 項、刪除 1 項、修改 2 項（含 0285–0300 停用各檔案系統模組等）
+- v1.2（2025-06-12）：修改 1 項（SSH 連線逾時 TWGCB-01-012-0272：`ClientAliveInterval` ≤ 600、`ClientAliveCountMax` = 1）
 
 **核心特色**：
 - 🔍 **完整檢測**：全面掃描系統現狀與 GCB 規範的符合程度
@@ -337,7 +344,7 @@ sudo /usr/local/apache/bin/apachectl restart
 ---
 
 **維護者**：warden  
-**最後更新**：2026-05-24  
+**最後更新**：2026-05-27  
 **版本**：2.1
 
 > 已對照國家資通安全研究院 (NICS) 最新發布之 GCB 說明文件確認：
