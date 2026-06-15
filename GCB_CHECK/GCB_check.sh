@@ -1,15 +1,24 @@
 #!/bin/bash
 
 # ==============================================================================
-# Red Hat Enterprise Linux 9 政府組態基準 (TWGCB-01-012) v1.2 合規性檢測腳本 v2
+# Red Hat Enterprise Linux 9 政府組態基準 (TWGCB-01-012) v1.2 合規性檢測腳本 v3
 #
 # 作者: warden
-# 日期: 2025-07-15
+# 日期: 2026-06-15
 #
 # 功能更新:
 # 1. 新增日誌匯出功能至 /var/log/
 # 2. 針對 TWGCB-01-012-0063 項目新增檔案數量統計
 # 3. 新增 CLI 統計摘要 (通過/未通過數量與比率)
+# 4. v3 對齊 NICS TWGCB-01-012 v1.2 (1140612)：
+#    - 修正檔案系統停用檢查 (0285~0300) 顯示佔位 ID 之問題
+#    - 新增 sudo 相關檢查 (0033, 0034, 0035)
+#    - 新增 v1.2 新增項目：opasswd 權限 (0303, 0304)、/etc/shells nologin (0305)、
+#      chrony 非 root 執行 (0306)、ptrace 限制模式 (0307)
+#
+# 來源依據：
+#   國家資通安全研究院 (NICS) TWGCB-01-012 v1.2 (中華民國114年6月12日)
+#   https://www.nics.nat.gov.tw/
 #
 # 免責聲明: 此腳本僅用於檢測，不會修改任何系統設定。
 # 執行前請詳閱腳本內容。建議以 root 權限執行以獲得最準確的結果。
@@ -178,14 +187,35 @@ check_filesystem() {
     fi
 
     print_header "磁碟與檔案系統 (3/3)"
-    # 新增項目檢查 from v1.1
-    # TWGCB-01-012-0285 to 0297, 0299-0300: 停用各種檔案系統
-    FS_TO_DISABLE=(freevxfs hfs hfsplus jffs2 afs ceph cifs exfat ext fat fscache fuse gfs2 nfsd)
-    for fs in "${FS_TO_DISABLE[@]}"; do
-        if ! modprobe -n -v "$fs" | grep -q "install /bin/true" && ! lsmod | grep -q "$fs"; then
-            print_pass "TWGCB-01-012-XXXX: $fs 檔案系統已停用。"
+    # v1.2 新增項目：TWGCB-01-012-0285 ~ 0300 停用各種檔案系統
+    # 以 ID 對應檔案系統，避免顯示佔位符 ID
+    declare -A FS_GCB_IDS=(
+        ["0285"]="freevxfs"
+        ["0286"]="hfs"
+        ["0287"]="hfsplus"
+        ["0288"]="jffs2"
+        ["0289"]="afs"
+        ["0290"]="ceph"
+        ["0291"]="cifs"
+        ["0292"]="exfat"
+        ["0293"]="ext"
+        ["0294"]="fat"
+        ["0295"]="fscache"
+        ["0296"]="fuse"
+        ["0297"]="gfs2"
+        ["0298"]="nfs_common"
+        ["0299"]="nfsd"
+        ["0300"]="smbfs_common"
+    )
+    # 以 ID 排序輸出，方便比對 GCB 文件
+    for id in $(echo "${!FS_GCB_IDS[@]}" | tr ' ' '\n' | sort); do
+        fs="${FS_GCB_IDS[$id]}"
+        # lsmod 模組名稱會以底線取代連字號，這裡同步轉換以正確比對
+        lsmod_name="${fs//-/_}"
+        if ! modprobe -n -v "$fs" 2>/dev/null | grep -q "install /bin/true" && ! lsmod | awk '{print $1}' | grep -qw "$lsmod_name"; then
+            print_pass "TWGCB-01-012-${id}: ${fs} 檔案系統已停用。"
         else
-            print_fail "TWGCB-01-012-XXXX: $fs 檔案系統未停用。應在 /etc/modprobe.d/ 建立設定檔停用。"
+            print_fail "TWGCB-01-012-${id}: ${fs} 檔案系統未停用。應在 /etc/modprobe.d/ 建立設定檔停用。"
         fi
     done
 }
@@ -253,6 +283,23 @@ check_system_settings() {
         print_fail "TWGCB-01-012-0032: dnf/yum 設定檔未啟用 gpgcheck。目前: ${GPG_CONF[0]}"
     fi
     print_info "TWGCB-01-012-0032: 提醒：此檢查未包含 /etc/yum.repos.d/ 下的所有 repo 檔案。"
+
+    # TWGCB-01-012-0033: sudo 套件
+    rpm -q sudo &> /dev/null && print_pass "TWGCB-01-012-0033: sudo 套件已安裝。" || print_fail "TWGCB-01-012-0033: sudo 套件未安裝。"
+
+    # TWGCB-01-012-0034: sudo 指令需使用 pty
+    if grep -rhqE '^\s*Defaults\s+use_pty' /etc/sudoers /etc/sudoers.d/ 2>/dev/null; then
+        print_pass "TWGCB-01-012-0034: sudo 已設定 use_pty。"
+    else
+        print_fail "TWGCB-01-012-0034: sudo 未設定 use_pty。應於 /etc/sudoers 或 /etc/sudoers.d/ 加入 Defaults use_pty。"
+    fi
+
+    # TWGCB-01-012-0035: sudo 自訂日誌檔
+    if grep -rhqE '^\s*Defaults\s+logfile\s*=' /etc/sudoers /etc/sudoers.d/ 2>/dev/null; then
+        print_pass "TWGCB-01-012-0035: sudo 已設定自訂日誌檔。"
+    else
+        print_fail "TWGCB-01-012-0035: sudo 未設定自訂日誌檔。應於 /etc/sudoers 或 /etc/sudoers.d/ 加入 Defaults logfile=\"/var/log/sudo.log\"。"
+    fi
 
     # TWGCB-01-012-0036: AIDE 套件
     rpm -q aide &> /dev/null && print_pass "TWGCB-01-012-0036: AIDE 套件已安裝。" || print_fail "TWGCB-01-012-0036: AIDE 套件未安裝。"
@@ -322,6 +369,48 @@ check_system_settings() {
         local details="CLI僅顯示前10筆，完整列表請見日誌檔。\n$(echo "$NO_GROUP_FILES" | head -n 10)"
         print_fail "TWGCB-01-012-0063: 發現 ${file_count} 個無擁有群組之檔案。" "$details"
         echo -e "\n--- 無擁有群組之檔案完整列表 ---\n$NO_GROUP_FILES" >> "$LOG_FILE"
+    fi
+
+    # v1.2 新增項目：TWGCB-01-012-0303 & 0304: opasswd 檔案所有權與權限
+    if [ -f /etc/security/opasswd ]; then
+        check_file_perms_owner "TWGCB-01-012-0303/04" "/etc/security/opasswd" "644" "root:root"
+    else
+        print_info "TWGCB-01-012-0303/04: /etc/security/opasswd 不存在 (系統尚未啟用 pam_pwhistory 紀錄)。"
+    fi
+    if [ -f /etc/security/opasswd.old ]; then
+        check_file_perms_owner "TWGCB-01-012-0303/04" "/etc/security/opasswd.old" "644" "root:root"
+    fi
+
+    # v1.2 新增項目：TWGCB-01-012-0305: /etc/shells 不應包含 nologin
+    if [ -f /etc/shells ]; then
+        if grep -qE '^[^#]*/sbin/nologin\s*$' /etc/shells; then
+            print_fail "TWGCB-01-012-0305: /etc/shells 中包含 /sbin/nologin，應移除。"
+        else
+            print_pass "TWGCB-01-012-0305: /etc/shells 中未包含 /sbin/nologin。"
+        fi
+    else
+        print_info "TWGCB-01-012-0305: /etc/shells 不存在，無法檢查。"
+    fi
+
+    # v1.2 新增項目：TWGCB-01-012-0306: 禁止 chrony 以 root 權限執行
+    if [ -f /etc/sysconfig/chronyd ]; then
+        if grep -qE '^\s*OPTIONS=.*-u\s+root' /etc/sysconfig/chronyd; then
+            print_fail "TWGCB-01-012-0306: chronyd 設定為以 root 權限執行，應改為以非特權使用者執行 (例如 -F 2)。"
+        elif grep -qE '^\s*OPTIONS=.*-F\s*2' /etc/sysconfig/chronyd; then
+            print_pass "TWGCB-01-012-0306: chronyd 已設定 -F 2，禁止以 root 權限執行。"
+        else
+            print_info "TWGCB-01-012-0306: /etc/sysconfig/chronyd 未明確設定執行身分 (預設為 chrony 使用者)。"
+        fi
+    else
+        print_info "TWGCB-01-012-0306: /etc/sysconfig/chronyd 不存在，無法檢查。"
+    fi
+
+    # v1.2 新增項目：TWGCB-01-012-0307: 啟用 ptrace 限制模式
+    PTRACE_SCOPE=$(sysctl -n kernel.yama.ptrace_scope 2>/dev/null)
+    if [[ "$PTRACE_SCOPE" =~ ^[1-3]$ ]]; then
+        print_pass "TWGCB-01-012-0307: kernel.yama.ptrace_scope 已設為 ${PTRACE_SCOPE}，符合啟用限制模式要求。"
+    else
+        print_fail "TWGCB-01-012-0307: kernel.yama.ptrace_scope 為 '${PTRACE_SCOPE:-未設定}'，應設為 1 (或更嚴格)。"
     fi
 }
 
