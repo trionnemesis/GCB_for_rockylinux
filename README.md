@@ -22,11 +22,9 @@
 
 **目的**：簡化並加速 Rocky Linux 9 系統的 GCB 安全性設定與檢測流程，透過自動化腳本減少人為疏失，確保設定一致性。
 
-**依據文件** (依據 [國家資通安全研究院 NICS](https://www.nics.nat.gov.tw/) 公告之最新版本)：
-- `TWGCB-01-012` Red Hat Enterprise Linux 9 政府組態基準說明文件(伺服器) **v1.2** (公告日期：114/06/12)
-- `TWGCB-04-007` Apache HTTP Server 2.4 政府組態基準說明文件 **v1.2**
-
-> 規則對應更新時間：2026-06-07。下載連結請至 NICS 官網 `核心業務 → GCB → GCB說明文件` 取得。
+**依據文件**：
+- `TWGCB-01-012` Red Hat Enterprise Linux 9 政府組態基準說明文件(伺服器) v1.2
+- `TWGCB-04-007` Apache HTTP Server 2.4 政府組態基準說明文件 v1.2
 
 **核心特色**：
 - 🔍 **完整檢測**：全面掃描系統現狀與 GCB 規範的符合程度
@@ -339,17 +337,20 @@ sudo /usr/local/apache/bin/apachectl restart
 ---
 
 **維護者**：warden  
-**最後更新**：2026-06-07 (對應 NICS TWGCB-01-012 v1.2)
+**最後更新**：2026-06-11
 **版本**：2.1
 
 ### 變更紀錄
 
-- **2026-06-07**：依據 NICS 公告之 TWGCB-01-012 v1.2 (114/06/12) 核對規則一致性
-  - 修正 `GCB_sshd.sh` 文件版本標示 (v1.3 → v1.2，RHEL 9 目前最新即為 v1.2)
-  - 啟用 `TWGCB-01-012-0315` GSSAPIAuthentication 預設停用
-  - 新增 `TWGCB-01-012-0282` KerberosAuthentication 停用設定
-  - 新增 `TWGCB-01-012-0283` SSH Banner 設定 (含 /etc/issue.net 預設內容)
-  - 檢測腳本補上 0282/0283/0315 對應檢查
-  - 檔案系統停用檢查改用對應 ID (0285-0300) 取代統一的 `XXXX` 佔位
+- **v2.1 (2026-06-11)**：對齊 NICS 發布之 `TWGCB-01-012 v1.2`（中華民國 114 年 6 月 12 日）
+  - `GCB_check.sh`：
+    - 修正 `TWGCB-01-012-0285~0300` 檔案系統檢查使用實際規則編號（原為 `XXXX` 佔位符）
+    - 補齊 `nfs_common (0298)`、`smbfs_common (0300)` 兩項
+    - 修正 `0255` SSH `Protocol` 檢查（OpenSSH 7.4+ 已移除該指令，預設僅支援 Protocol 2）
+    - `0235 TMOUT` 與 `0238 umask` 檢查擴大涵蓋 `/etc/profile.d/*.sh` 與 `/etc/login.defs`
+    - 新增 `0033` sudo 套件、`0034` use_pty、`0035` logfile 檢查
+    - 新增 `0221` 通行碼 SHA512 雜湊、`0310` even_deny_root、`0311` maxsequence
+    - 新增 `check_cron` 函式：`0189`、`0190/91`、`0192~0201`、`0202/03` cron / at 權限
+- **v2.0**：新增日誌匯出至 `/var/log/`、檔案數量統計、CLI 統計摘要
 
 如有問題或建議，請透過 GitHub Issues 回報。
