@@ -1,12 +1,17 @@
 #!/bin/bash
 
 # ==============================================================================
-# Red Hat Enterprise Linux 9 政府組態基準 (TWGCB-01-012) v1.2 合規性檢測腳本 v2
+# Red Hat Enterprise Linux 9 政府組態基準 (TWGCB-01-012) v1.2 合規性檢測腳本 v3
 #
-# 作者: warden
-# 日期: 2025-07-15
+# 文件依據: TWGCB-01-012 v1.2 (1140612, 2025-06-12 發行)
 #
-# 功能更新:
+# 功能更新 v3:
+# 1. 修正模組停用檢查邏輯 (原本反向, 已合規系統會被判 FAIL)
+# 2. 將 v1.1 新增之檔案系統項目 (0285-0300) 之 placeholder ID 補齊
+# 3. TMOUT 檢查擴增至 /etc/profile.d/ 目錄 (與 GCB.sh 之設定路徑一致)
+# 4. 防呆: pwquality / faillock / login.defs 之數值欄位為空時不再噴錯
+#
+# 功能更新 v2:
 # 1. 新增日誌匯出功能至 /var/log/
 # 2. 針對 TWGCB-01-012-0063 項目新增檔案數量統計
 # 3. 新增 CLI 統計摘要 (通過/未通過數量與比率)
@@ -91,6 +96,35 @@ if [[ $EUID -ne 0 ]]; then
    print_fail "此腳本需要 root 權限才能完整執行。請使用 'sudo ./check_rhel9_gcb.sh' 執行。"
 fi
 
+# 判斷核心模組是否「已被 GCB 停用」:
+#   - /etc/modprobe.d/*.conf 內含 "install <mod> /bin/true" (或 /bin/false), 或
+#   - 系統根本沒有此模組 (modprobe -n -v 找不到), 且
+#   - 模組目前並未被載入 (lsmod 找不到)
+# 同時回傳 0 (合規) 或 1 (未合規)。
+is_module_disabled() {
+    local mod="$1"
+    local probe
+    probe=$(modprobe -n -v "$mod" 2>&1)
+
+    local declared=1
+    if echo "$probe" | grep -qE "install[[:space:]]+/bin/(true|false)"; then
+        declared=0
+    elif echo "$probe" | grep -qiE "not found|FATAL|無此模組|沒有.*模組"; then
+        # 系統不提供此模組視同已停用
+        declared=0
+    fi
+
+    local loaded=1
+    if lsmod | awk '{print $1}' | grep -qx "${mod//-/_}"; then
+        loaded=0
+    fi
+
+    if [ "$declared" -eq 0 ] && [ "$loaded" -ne 0 ]; then
+        return 0
+    fi
+    return 1
+}
+
 # ==============================================================================
 # --- 檢測函式 ---
 # ==============================================================================
@@ -100,21 +134,21 @@ check_filesystem() {
     print_header "磁碟與檔案系統 (1/3)"
 
     # TWGCB-01-012-0001: 停用 cramfs 檔案系統
-    if ! modprobe -n -v cramfs | grep -q "install /bin/true" && ! lsmod | grep -q "cramfs"; then
+    if is_module_disabled cramfs; then
         print_pass "TWGCB-01-012-0001: cramfs 檔案系統已停用。"
     else
         print_fail "TWGCB-01-012-0001: cramfs 檔案系統未停用。應在 /etc/modprobe.d/ 建立設定檔停用。"
     fi
 
     # TWGCB-01-012-0002: 停用 squashfs 檔案系統
-    if ! modprobe -n -v squashfs | grep -q "install /bin/true" && ! lsmod | grep -q "squashfs"; then
+    if is_module_disabled squashfs; then
         print_pass "TWGCB-01-012-0002: squashfs 檔案系統已停用。"
     else
         print_fail "TWGCB-01-012-0002: squashfs 檔案系統未停用。應在 /etc/modprobe.d/ 建立設定檔停用。"
     fi
 
     # TWGCB-01-012-0003: 停用 udf 檔案系統
-    if ! modprobe -n -v udf | grep -q "install /bin/true" && ! lsmod | grep -q "udf"; then
+    if is_module_disabled udf; then
         print_pass "TWGCB-01-012-0003: udf 檔案系統已停用。"
     else
         print_fail "TWGCB-01-012-0003: udf 檔案系統未停用。應在 /etc/modprobe.d/ 建立設定檔停用。"
@@ -171,27 +205,39 @@ check_filesystem() {
     fi
 
     # TWGCB-01-012-0031: 停用 USB 儲存裝置
-    if ! modprobe -n -v usb-storage | grep -q "install /bin/true" && ! lsmod | grep -q "usb_storage"; then
+    if is_module_disabled usb-storage; then
         print_pass "TWGCB-01-012-0031: USB 儲存裝置已停用。"
     else
         print_fail "TWGCB-01-012-0031: USB 儲存裝置未停用。應在 /etc/modprobe.d/ 建立設定檔停用。"
     fi
 
     print_header "磁碟與檔案系統 (3/3)"
-    # 新增項目檢查 (v1.1/v1.2)
-    # TWGCB-01-012-0285 to 0300: 停用各種檔案系統 (對應 ID)
-    declare -A FS_IDS=(
-        [freevxfs]="0285" [hfs]="0286" [hfsplus]="0287" [jffs2]="0288"
-        [afs]="0289" [ceph]="0290" [cifs]="0291" [exfat]="0292"
-        [ext]="0293" [fat]="0294" [fscache]="0295" [fuse]="0296"
-        [gfs2]="0297" [nfs_common]="0298" [nfsd]="0299" [smbfs_common]="0300"
+    # v1.1 新增之檔案系統停用項目 (TWGCB-01-012-0285 ~ 0300)
+    # 與 GCB_SET/GCB.sh 之 apply_disk_and_fs_settings 對齊
+    declare -A FS_TWGCB_ID=(
+        [freevxfs]="TWGCB-01-012-0285"
+        [hfs]="TWGCB-01-012-0286"
+        [hfsplus]="TWGCB-01-012-0287"
+        [jffs2]="TWGCB-01-012-0288"
+        [afs]="TWGCB-01-012-0289"
+        [ceph]="TWGCB-01-012-0290"
+        [cifs]="TWGCB-01-012-0291"
+        [exfat]="TWGCB-01-012-0292"
+        [ext]="TWGCB-01-012-0293"
+        [fat]="TWGCB-01-012-0294"
+        [fscache]="TWGCB-01-012-0295"
+        [fuse]="TWGCB-01-012-0296"
+        [gfs2]="TWGCB-01-012-0297"
+        [nfs_common]="TWGCB-01-012-0298"
+        [nfsd]="TWGCB-01-012-0299"
+        [smbfs_common]="TWGCB-01-012-0300"
     )
-    for fs in "${!FS_IDS[@]}"; do
-        local id="TWGCB-01-012-0${FS_IDS[$fs]}"
-        if ! modprobe -n -v "$fs" 2>/dev/null | grep -q "install /bin/true" && ! lsmod | grep -q "^${fs} "; then
-            print_pass "$id: $fs 檔案系統已停用。"
+    for fs in freevxfs hfs hfsplus jffs2 afs ceph cifs exfat ext fat fscache fuse gfs2 nfs_common nfsd smbfs_common; do
+        local id="${FS_TWGCB_ID[$fs]}"
+        if is_module_disabled "$fs"; then
+            print_pass "${id}: $fs 檔案系統已停用。"
         else
-            print_fail "$id: $fs 檔案系統未停用。應在 /etc/modprobe.d/ 建立設定檔停用。"
+            print_fail "${id}: $fs 檔案系統未停用。應在 /etc/modprobe.d/ 建立設定檔停用。"
         fi
     done
 }
@@ -417,62 +463,65 @@ check_accounts() {
     print_header "帳號與存取控制 (1/2)"
     
     # TWGCB-01-012-0207: 通行碼最小長度
-    MINLEN=$(grep '^\s*minlen' /etc/security/pwquality.conf | awk -F= '{print $2}' | xargs)
-    if [[ "$MINLEN" -ge 12 ]]; then
+    MINLEN=$(grep '^\s*minlen' /etc/security/pwquality.conf 2>/dev/null | awk -F= '{print $2}' | xargs)
+    if [[ -n "$MINLEN" && "$MINLEN" =~ ^[0-9]+$ && "$MINLEN" -ge 12 ]]; then
         print_pass "TWGCB-01-012-0207: 通行碼最小長度 (minlen) 為 $MINLEN，符合 >= 12 要求。"
     else
-        print_fail "TWGCB-01-012-0207: 通行碼最小長度 (minlen) 為 $MINLEN，應 >= 12。"
+        print_fail "TWGCB-01-012-0207: 通行碼最小長度 (minlen) 為 ${MINLEN:-未設定}，應 >= 12。"
     fi
 
     # TWGCB-01-012-0208: 通行碼字元類別數量
-    MINCLASS=$(grep '^\s*minclass' /etc/security/pwquality.conf | awk -F= '{print $2}' | xargs)
-    if [[ "$MINCLASS" -ge 4 ]]; then
+    MINCLASS=$(grep '^\s*minclass' /etc/security/pwquality.conf 2>/dev/null | awk -F= '{print $2}' | xargs)
+    if [[ -n "$MINCLASS" && "$MINCLASS" =~ ^[0-9]+$ && "$MINCLASS" -ge 4 ]]; then
         print_pass "TWGCB-01-012-0208: 通行碼字元類別數 (minclass) 為 $MINCLASS，符合 >= 4 要求。"
     else
-        print_fail "TWGCB-01-012-0208: 通行碼字元類別數 (minclass) 為 $MINCLASS，應 >= 4。"
+        print_fail "TWGCB-01-012-0208: 通行碼字元類別數 (minclass) 為 ${MINCLASS:-未設定}，應 >= 4。"
     fi
 
     # TWGCB-01-012-0218: 帳戶鎖定閾值
-    DENY=$(grep '^\s*deny' /etc/security/faillock.conf | awk -F= '{print $2}' | xargs)
-    if [[ "$DENY" -gt 0 && "$DENY" -le 5 ]]; then
+    DENY=$(grep '^\s*deny' /etc/security/faillock.conf 2>/dev/null | awk -F= '{print $2}' | xargs)
+    if [[ -n "$DENY" && "$DENY" =~ ^[0-9]+$ && "$DENY" -gt 0 && "$DENY" -le 5 ]]; then
         print_pass "TWGCB-01-012-0218: 帳戶鎖定閾值 (deny) 為 $DENY，符合 1-5 次要求。"
     else
-        print_fail "TWGCB-01-012-0218: 帳戶鎖定閾值 (deny) 為 $DENY，應設定為 1-5 次。"
+        print_fail "TWGCB-01-012-0218: 帳戶鎖定閾值 (deny) 為 ${DENY:-未設定}，應設定為 1-5 次。"
     fi
-    
+
     # TWGCB-01-012-0219: 帳戶鎖定時間
-    UNLOCK_TIME=$(grep '^\s*unlock_time' /etc/security/faillock.conf | awk -F= '{print $2}' | xargs)
-    if [[ "$UNLOCK_TIME" -ge 900 ]]; then
+    UNLOCK_TIME=$(grep '^\s*unlock_time' /etc/security/faillock.conf 2>/dev/null | awk -F= '{print $2}' | xargs)
+    if [[ -n "$UNLOCK_TIME" && "$UNLOCK_TIME" =~ ^[0-9]+$ && "$UNLOCK_TIME" -ge 900 ]]; then
         print_pass "TWGCB-01-012-0219: 帳戶鎖定時間 (unlock_time) 為 $UNLOCK_TIME 秒，符合 >= 900 要求。"
     else
-        print_fail "TWGCB-01-012-0219: 帳戶鎖定時間 (unlock_time) 為 $UNLOCK_TIME 秒，應 >= 900。"
+        print_fail "TWGCB-01-012-0219: 帳戶鎖定時間 (unlock_time) 為 ${UNLOCK_TIME:-未設定} 秒，應 >= 900。"
     fi
 
     print_header "帳號與存取控制 (2/2)"
     # TWGCB-01-012-0222: 通行碼最短使用期限
-    PASS_MIN_DAYS=$(grep '^\s*PASS_MIN_DAYS' /etc/login.defs | awk '{print $2}')
-    if [[ "$PASS_MIN_DAYS" -ge 1 ]]; then
+    PASS_MIN_DAYS=$(grep '^\s*PASS_MIN_DAYS' /etc/login.defs 2>/dev/null | awk '{print $2}')
+    if [[ -n "$PASS_MIN_DAYS" && "$PASS_MIN_DAYS" =~ ^[0-9]+$ && "$PASS_MIN_DAYS" -ge 1 ]]; then
         print_pass "TWGCB-01-012-0222: 通行碼最短使用期限為 $PASS_MIN_DAYS 天，符合 >= 1 要求。"
     else
-        print_fail "TWGCB-01-012-0222: 通行碼最短使用期限為 $PASS_MIN_DAYS 天，應 >= 1。"
+        print_fail "TWGCB-01-012-0222: 通行碼最短使用期限為 ${PASS_MIN_DAYS:-未設定} 天，應 >= 1。"
     fi
     print_info "TWGCB-01-012-0222: 提醒：此設定對既有使用者需使用 'chage' 指令個別設定。"
 
     # TWGCB-01-012-0224: 通行碼最長使用期限
-    PASS_MAX_DAYS=$(grep '^\s*PASS_MAX_DAYS' /etc/login.defs | awk '{print $2}')
-    if [[ "$PASS_MAX_DAYS" -le 90 && "$PASS_MAX_DAYS" -gt 0 ]]; then
+    PASS_MAX_DAYS=$(grep '^\s*PASS_MAX_DAYS' /etc/login.defs 2>/dev/null | awk '{print $2}')
+    if [[ -n "$PASS_MAX_DAYS" && "$PASS_MAX_DAYS" =~ ^[0-9]+$ && "$PASS_MAX_DAYS" -le 90 && "$PASS_MAX_DAYS" -gt 0 ]]; then
         print_pass "TWGCB-01-012-0224: 通行碼最長使用期限為 $PASS_MAX_DAYS 天，符合 1-90 天要求。"
     else
-        print_fail "TWGCB-01-012-0224: 通行碼最長使用期限為 $PASS_MAX_DAYS 天，應設定在 1-90 天內。"
+        print_fail "TWGCB-01-012-0224: 通行碼最長使用期限為 ${PASS_MAX_DAYS:-未設定} 天，應設定在 1-90 天內。"
     fi
     print_info "TWGCB-01-012-0224: 提醒：此設定對既有使用者需使用 'chage' 指令個別設定。"
 
     # TWGCB-01-012-0235: Bash shell 閒置登出時間
-    TMOUT_VAL=$(grep -E '^\s*readonly TMOUT=' /etc/profile /etc/bashrc 2>/dev/null | tail -1 | grep -o '[0-9]*')
-    if [[ "$TMOUT_VAL" -gt 0 && "$TMOUT_VAL" -le 900 ]]; then
+    # 設定可能存在 /etc/profile、/etc/bashrc 或 /etc/profile.d/*.sh
+    TMOUT_VAL=$(grep -hE '^\s*(readonly\s+)?TMOUT=' \
+        /etc/profile /etc/bashrc /etc/profile.d/*.sh 2>/dev/null \
+        | grep -oE 'TMOUT=[0-9]+' | tail -1 | grep -oE '[0-9]+')
+    if [[ -n "$TMOUT_VAL" && "$TMOUT_VAL" -gt 0 && "$TMOUT_VAL" -le 900 ]]; then
         print_pass "TWGCB-01-012-0235: Bash shell 閒置登出時間為 $TMOUT_VAL 秒，符合 1-900 秒要求。"
     else
-        print_fail "TWGCB-01-012-0235: Bash shell 閒置登出時間未設定或不符要求 (目前: $TMOUT_VAL)，應設定在 1-900 秒內。"
+        print_fail "TWGCB-01-012-0235: Bash shell 閒置登出時間未設定或不符要求 (目前: ${TMOUT_VAL:-未設定})，應設定在 1-900 秒內。"
     fi
 
     # TWGCB-01-012-0238: 使用者帳號預設 umask
@@ -502,10 +551,10 @@ check_ssh() {
 
     # TWGCB-01-012-0266: SSH MaxAuthTries
     MAX_AUTH_TRIES=$(grep -iE "^\s*MaxAuthTries" "$SSHD_CONFIG" | awk '{print $2}')
-    if [[ "$MAX_AUTH_TRIES" -gt 0 && "$MAX_AUTH_TRIES" -le 4 ]]; then
+    if [[ -n "$MAX_AUTH_TRIES" && "$MAX_AUTH_TRIES" =~ ^[0-9]+$ && "$MAX_AUTH_TRIES" -gt 0 && "$MAX_AUTH_TRIES" -le 4 ]]; then
         print_pass "TWGCB-01-012-0266: SSH MaxAuthTries 為 $MAX_AUTH_TRIES，符合 1-4 次要求。"
     else
-        print_fail "TWGCB-01-012-0266: SSH MaxAuthTries 為 $MAX_AUTH_TRIES，應為 1-4 次。"
+        print_fail "TWGCB-01-012-0266: SSH MaxAuthTries 為 ${MAX_AUTH_TRIES:-未設定}，應為 1-4 次。"
     fi
 
     # TWGCB-01-012-0269: SSH PermitRootLogin
@@ -517,28 +566,17 @@ check_ssh() {
     # TWGCB-01-012-0272: SSH 逾時時間 (v1.2 修改)
     ALIVE_INTERVAL=$(grep -iE "^\s*ClientAliveInterval" "$SSHD_CONFIG" | awk '{print $2}')
     ALIVE_COUNT_MAX=$(grep -iE "^\s*ClientAliveCountMax" "$SSHD_CONFIG" | awk '{print $2}')
-    if [[ "$ALIVE_INTERVAL" -gt 0 && "$ALIVE_INTERVAL" -le 600 && "$ALIVE_COUNT_MAX" -eq 1 ]]; then
+    if [[ -n "$ALIVE_INTERVAL" && -n "$ALIVE_COUNT_MAX" \
+          && "$ALIVE_INTERVAL" =~ ^[0-9]+$ && "$ALIVE_COUNT_MAX" =~ ^[0-9]+$ \
+          && "$ALIVE_INTERVAL" -gt 0 && "$ALIVE_INTERVAL" -le 600 && "$ALIVE_COUNT_MAX" -eq 1 ]]; then
         print_pass "TWGCB-01-012-0272: SSH 逾時時間設定符合要求 (Interval: $ALIVE_INTERVAL, CountMax: $ALIVE_COUNT_MAX)。"
     else
-        print_fail "TWGCB-01-012-0272: SSH 逾時時間設定不符要求 (Interval: $ALIVE_INTERVAL, CountMax: $ALIVE_COUNT_MAX)。應為 Interval <= 600 且 CountMax = 1。"
+        print_fail "TWGCB-01-012-0272: SSH 逾時時間設定不符要求 (Interval: ${ALIVE_INTERVAL:-未設定}, CountMax: ${ALIVE_COUNT_MAX:-未設定})。應為 Interval <= 600 且 CountMax = 1。"
     fi
 
     # TWGCB-01-012-0274: SSH UsePAM
     grep -qE "^\s*UsePAM\s+yes" "$SSHD_CONFIG" && print_pass "TWGCB-01-012-0274: SSH UsePAM 已設為 yes。" || print_fail "TWGCB-01-012-0274: SSH UsePAM 未設為 yes。"
 
-    # TWGCB-01-012-0282: 停用 Kerberos 認證
-    grep -qE "^\s*KerberosAuthentication\s+no" "$SSHD_CONFIG" && print_pass "TWGCB-01-012-0282: SSH KerberosAuthentication 已設為 no。" || print_fail "TWGCB-01-012-0282: SSH KerberosAuthentication 未設為 no。"
-
-    # TWGCB-01-012-0283: SSH Banner
-    BANNER_LINE=$(grep -iE "^\s*Banner\s+" "$SSHD_CONFIG" | awk '{print $2}')
-    if [ -n "$BANNER_LINE" ] && [ "$BANNER_LINE" != "none" ] && [ -s "$BANNER_LINE" ]; then
-        print_pass "TWGCB-01-012-0283: SSH Banner 已設定 ($BANNER_LINE)。"
-    else
-        print_fail "TWGCB-01-012-0283: SSH Banner 未設定或檔案不存在。"
-    fi
-
-    # TWGCB-01-012-0315: 停用 GSSAPI 驗證
-    grep -qE "^\s*GSSAPIAuthentication\s+no" "$SSHD_CONFIG" && print_pass "TWGCB-01-012-0315: SSH GSSAPIAuthentication 已設為 no。" || print_fail "TWGCB-01-012-0315: SSH GSSAPIAuthentication 未設為 no。"
 }
 
 print_summary() {
