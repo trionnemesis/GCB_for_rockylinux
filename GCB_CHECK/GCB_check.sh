@@ -1,10 +1,10 @@
 #!/bin/bash
 
 # ==============================================================================
-# Red Hat Enterprise Linux 9 政府組態基準 (TWGCB-01-012) v1.2 合規性檢測腳本 v3
+# Red Hat Enterprise Linux 9 政府組態基準 (TWGCB-01-012) v1.2 合規性檢測腳本 v4
 #
 # 作者: warden
-# 日期: 2026-06-15
+# 日期: 2026-06-16
 #
 # 功能更新:
 # 1. 新增日誌匯出功能至 /var/log/
@@ -15,6 +15,12 @@
 #    - 新增 sudo 相關檢查 (0033, 0034, 0035)
 #    - 新增 v1.2 新增項目：opasswd 權限 (0303, 0304)、/etc/shells nologin (0305)、
 #      chrony 非 root 執行 (0306)、ptrace 限制模式 (0307)
+# 5. v4 補齊 CHECK 與 SET 對應落差，全面對齊 v1.2：
+#    - 新增 check_cron 函式：0189 crond、0190/91 /etc/crontab、
+#      0192~0201 /etc/cron.{hourly,daily,weekly,monthly,d}、0202/03 cron.allow/at.allow
+#    - 新增 0221 通行碼 SHA512 雜湊檢查
+#    - 新增 0310 faillock even_deny_root 檢查
+#    - 新增 0311 pwquality maxsequence 檢查
 #
 # 來源依據：
 #   國家資通安全研究院 (NICS) TWGCB-01-012 v1.2 (中華民國114年6月12日)
@@ -453,6 +459,70 @@ check_software() {
     rpm -q rsh-server &> /dev/null && print_fail "TWGCB-01-012-0105: rsh-server 套件已安裝，應移除。" || print_pass "TWGCB-01-012-0105: rsh-server 套件未安裝。"
 }
 
+# Cron 與 At 排程 (v1.2 對齊：0189、0190~0203)
+check_cron() {
+    print_header "Cron 與 At 排程"
+
+    # TWGCB-01-012-0189: 啟用 crond 守護程序
+    if systemctl is-enabled crond &>/dev/null; then
+        print_pass "TWGCB-01-012-0189: crond 服務已啟用。"
+    else
+        print_fail "TWGCB-01-012-0189: crond 服務未啟用，應執行 'systemctl --now enable crond'。"
+    fi
+
+    # TWGCB-01-012-0190 & 0191: /etc/crontab 權限 (600) 與擁有者 (root:root)
+    if [ -f /etc/crontab ]; then
+        check_file_perms_owner "TWGCB-01-012-0190/91" "/etc/crontab" "600" "root:root"
+    else
+        print_fail "TWGCB-01-012-0190/91: /etc/crontab 不存在。"
+    fi
+
+    # TWGCB-01-012-0192~0201: cron 目錄權限 (700) 與擁有者 (root:root)
+    declare -A CRON_DIR_IDS=(
+        ["0192/93"]="/etc/cron.hourly"
+        ["0194/95"]="/etc/cron.daily"
+        ["0196/97"]="/etc/cron.weekly"
+        ["0198/99"]="/etc/cron.monthly"
+        ["0200/01"]="/etc/cron.d"
+    )
+    for id in $(echo "${!CRON_DIR_IDS[@]}" | tr ' ' '\n' | sort); do
+        dir="${CRON_DIR_IDS[$id]}"
+        if [ -d "$dir" ]; then
+            check_file_perms_owner "TWGCB-01-012-${id}" "$dir" "700" "root:root"
+        else
+            print_info "TWGCB-01-012-${id}: 目錄 $dir 不存在。"
+        fi
+    done
+
+    # TWGCB-01-012-0202: 限制 cron 使用者 (/etc/cron.allow 存在且權限 600，移除 /etc/cron.deny)
+    local cron_ok=1
+    if [ -f /etc/cron.allow ]; then
+        check_file_perms_owner "TWGCB-01-012-0202" "/etc/cron.allow" "600" "root:root"
+    else
+        print_fail "TWGCB-01-012-0202: /etc/cron.allow 不存在，應建立以白名單限制使用者。"
+        cron_ok=0
+    fi
+    if [ -f /etc/cron.deny ]; then
+        print_fail "TWGCB-01-012-0202: /etc/cron.deny 仍存在，應移除以僅採用 cron.allow 白名單。"
+        cron_ok=0
+    fi
+    [ $cron_ok -eq 1 ] && print_pass "TWGCB-01-012-0202: cron.deny 已移除，僅採用 cron.allow 白名單。"
+
+    # TWGCB-01-012-0203: 限制 at 使用者 (/etc/at.allow 存在且權限 600，移除 /etc/at.deny)
+    local at_ok=1
+    if [ -f /etc/at.allow ]; then
+        check_file_perms_owner "TWGCB-01-012-0203" "/etc/at.allow" "600" "root:root"
+    else
+        print_fail "TWGCB-01-012-0203: /etc/at.allow 不存在，應建立以白名單限制使用者。"
+        at_ok=0
+    fi
+    if [ -f /etc/at.deny ]; then
+        print_fail "TWGCB-01-012-0203: /etc/at.deny 仍存在，應移除以僅採用 at.allow 白名單。"
+        at_ok=0
+    fi
+    [ $at_ok -eq 1 ] && print_pass "TWGCB-01-012-0203: at.deny 已移除，僅採用 at.allow 白名單。"
+}
+
 # 網路設定
 check_network() {
     print_header "網路設定"
@@ -522,13 +592,36 @@ check_accounts() {
     else
         print_fail "TWGCB-01-012-0218: 帳戶鎖定閾值 (deny) 為 $DENY，應設定為 1-5 次。"
     fi
-    
+
     # TWGCB-01-012-0219: 帳戶鎖定時間
     UNLOCK_TIME=$(grep '^\s*unlock_time' /etc/security/faillock.conf | awk -F= '{print $2}' | xargs)
     if [[ "$UNLOCK_TIME" -ge 900 ]]; then
         print_pass "TWGCB-01-012-0219: 帳戶鎖定時間 (unlock_time) 為 $UNLOCK_TIME 秒，符合 >= 900 要求。"
     else
         print_fail "TWGCB-01-012-0219: 帳戶鎖定時間 (unlock_time) 為 $UNLOCK_TIME 秒，應 >= 900。"
+    fi
+
+    # TWGCB-01-012-0310: 帳戶鎖定亦適用於 root (even_deny_root)
+    if grep -qE '^\s*even_deny_root\b' /etc/security/faillock.conf; then
+        print_pass "TWGCB-01-012-0310: faillock 已設定 even_deny_root，鎖定機制亦適用於 root。"
+    else
+        print_fail "TWGCB-01-012-0310: faillock 未設定 even_deny_root，應於 /etc/security/faillock.conf 加入 even_deny_root。"
+    fi
+
+    # TWGCB-01-012-0221: 通行碼雜湊演算法為 SHA512
+    ENCRYPT_METHOD=$(grep -E '^\s*ENCRYPT_METHOD\s+' /etc/login.defs 2>/dev/null | awk '{print $2}')
+    if [[ "$ENCRYPT_METHOD" == "SHA512" ]]; then
+        print_pass "TWGCB-01-012-0221: /etc/login.defs ENCRYPT_METHOD 已設為 SHA512。"
+    else
+        print_fail "TWGCB-01-012-0221: /etc/login.defs ENCRYPT_METHOD 為 '${ENCRYPT_METHOD:-未設定}'，應設為 SHA512。"
+    fi
+
+    # TWGCB-01-012-0311: 通行碼最大連續同類字元數 (maxsequence)
+    MAXSEQ=$(grep -E '^\s*maxsequence' /etc/security/pwquality.conf 2>/dev/null | awk -F= '{print $2}' | xargs)
+    if [[ -n "$MAXSEQ" && "$MAXSEQ" =~ ^[0-9]+$ && "$MAXSEQ" -ge 1 && "$MAXSEQ" -le 4 ]]; then
+        print_pass "TWGCB-01-012-0311: pwquality maxsequence 為 $MAXSEQ，符合 1-4 之要求。"
+    else
+        print_fail "TWGCB-01-012-0311: pwquality maxsequence 為 '${MAXSEQ:-未設定}'，應於 /etc/security/pwquality.conf 設為 1-4 (建議 3)。"
     fi
 
     print_header "帳號與存取控制 (2/2)"
@@ -650,6 +743,7 @@ main() {
     check_system_settings
     check_services
     check_software
+    check_cron
     check_network
     check_selinux
     check_accounts
