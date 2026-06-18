@@ -337,20 +337,28 @@ sudo /usr/local/apache/bin/apachectl restart
 ---
 
 **維護者**：warden  
-**最後更新**：2026-06-11
-**版本**：2.1
+**最後更新**：2026-06-18
+**版本**：2.2
 
 ### 變更紀錄
 
+- **v2.2 (2026-06-18)**：再次核對 NICS GCB 規則並補齊 `GCB_check.sh` 缺漏項
+  - 經查 NICS 官網最新仍為 `TWGCB-01-012 v1.2`（中華民國 114 年 6 月 12 日），無新版本發布
+  - `GCB_check.sh` 補齊與 `GCB_SET/GCB.sh` 對應之檢查項：
+    - 新增 `check_cron` 函式：`0189` crond、`0190/91` /etc/crontab、`0192~0201` cron 目錄、`0202/03` cron.allow/at.allow、`0204` cron 日誌
+    - 新增 `check_logrotate` 函式：`0308` rsyslog logrotate
+    - 新增 `0217` pam_faillock、`0221` SHA512 通行碼雜湊、`0226` FAIL_DELAY
+    - 新增 `0310` even_deny_root/root_unlock_time、`0311` maxsequence
+    - 新增 `0241` pam_wheel.so for su、`0309` root umask、`0312` without-nullok
+    - `0235 TMOUT` 與 `0238 umask` 擴大涵蓋 `/etc/profile.d/*.sh` 與 `/etc/login.defs`
 - **v2.1 (2026-06-11)**：對齊 NICS 發布之 `TWGCB-01-012 v1.2`（中華民國 114 年 6 月 12 日）
   - `GCB_check.sh`：
     - 修正 `TWGCB-01-012-0285~0300` 檔案系統檢查使用實際規則編號（原為 `XXXX` 佔位符）
     - 補齊 `nfs_common (0298)`、`smbfs_common (0300)` 兩項
     - 修正 `0255` SSH `Protocol` 檢查（OpenSSH 7.4+ 已移除該指令，預設僅支援 Protocol 2）
-    - `0235 TMOUT` 與 `0238 umask` 檢查擴大涵蓋 `/etc/profile.d/*.sh` 與 `/etc/login.defs`
     - 新增 `0033` sudo 套件、`0034` use_pty、`0035` logfile 檢查
-    - 新增 `0221` 通行碼 SHA512 雜湊、`0310` even_deny_root、`0311` maxsequence
-    - 新增 `check_cron` 函式：`0189`、`0190/91`、`0192~0201`、`0202/03` cron / at 權限
+    - 新增 v1.2 新增項目：`0303/04` opasswd 權限、`0305` /etc/shells nologin、
+      `0306` chrony 非 root 執行、`0307` ptrace 限制模式
 - **v2.0**：新增日誌匯出至 `/var/log/`、檔案數量統計、CLI 統計摘要
 
 如有問題或建議，請透過 GitHub Issues 回報。
