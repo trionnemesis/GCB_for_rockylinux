@@ -15,6 +15,14 @@
 #    - 新增 sudo 相關檢查 (0033, 0034, 0035)
 #    - 新增 v1.2 新增項目：opasswd 權限 (0303, 0304)、/etc/shells nologin (0305)、
 #      chrony 非 root 執行 (0306)、ptrace 限制模式 (0307)
+# 5. v3.1 補齊 README v2.1 已宣告但未實作之檢測項目：
+#    - 新增 0221 通行碼 SHA512 雜湊演算法檢查
+#    - 新增 0310 even_deny_root / root_unlock_time 檢查
+#    - 新增 0311 maxsequence 檢查
+#    - 新增 check_cron 函式：0189 啟用 crond、0190/0191 /etc/crontab、
+#      0192~0201 cron.* 目錄、0202/0203 at/cron 使用者限制
+#    - 修正 0255 SSH Protocol 檢查（OpenSSH 7.4+ 已移除該指令，預設僅支援 v2）
+#    - 擴大 0235 TMOUT 與 0238 umask 檢查涵蓋 /etc/profile.d/*.sh 與 /etc/login.defs
 #
 # 來源依據：
 #   國家資通安全研究院 (NICS) TWGCB-01-012 v1.2 (中華民國114年6月12日)
@@ -551,20 +559,142 @@ check_accounts() {
     print_info "TWGCB-01-012-0224: 提醒：此設定對既有使用者需使用 'chage' 指令個別設定。"
 
     # TWGCB-01-012-0235: Bash shell 閒置登出時間
-    TMOUT_VAL=$(grep -E '^\s*readonly TMOUT=' /etc/profile /etc/bashrc 2>/dev/null | tail -1 | grep -o '[0-9]*')
-    if [[ "$TMOUT_VAL" -gt 0 && "$TMOUT_VAL" -le 900 ]]; then
+    # v3.1：擴大涵蓋 /etc/profile.d/*.sh 及 /etc/login.defs
+    TMOUT_VAL=$(grep -hE '^\s*(readonly\s+)?TMOUT\s*=' /etc/profile /etc/bashrc /etc/profile.d/*.sh 2>/dev/null \
+        | tail -n1 | grep -oE '[0-9]+' | head -n1)
+    if [[ -z "$TMOUT_VAL" ]]; then
+        # 部分基準允許以 /etc/login.defs 設定 LOGIN_TIMEOUT (備援)
+        TMOUT_VAL=$(awk '/^\s*LOGIN_TIMEOUT\s+/{print $2}' /etc/login.defs 2>/dev/null | tail -n1)
+    fi
+    if [[ "$TMOUT_VAL" =~ ^[0-9]+$ && "$TMOUT_VAL" -gt 0 && "$TMOUT_VAL" -le 900 ]]; then
         print_pass "TWGCB-01-012-0235: Bash shell 閒置登出時間為 $TMOUT_VAL 秒，符合 1-900 秒要求。"
     else
-        print_fail "TWGCB-01-012-0235: Bash shell 閒置登出時間未設定或不符要求 (目前: $TMOUT_VAL)，應設定在 1-900 秒內。"
+        print_fail "TWGCB-01-012-0235: Bash shell 閒置登出時間未設定或不符要求 (目前: ${TMOUT_VAL:-未設定})，應於 /etc/profile、/etc/bashrc 或 /etc/profile.d/*.sh 設定 1-900 秒。"
     fi
 
     # TWGCB-01-012-0238: 使用者帳號預設 umask
-    UMASK_VAL=$(grep '^\s*umask' /etc/profile /etc/bashrc | tail -n1 | awk '{print $2}')
+    # v3.1：擴大涵蓋 /etc/profile.d/*.sh 及 /etc/login.defs (UMASK 欄位)
+    UMASK_VAL=$(grep -hE '^\s*umask\s+[0-7]+' /etc/profile /etc/bashrc /etc/profile.d/*.sh 2>/dev/null \
+        | tail -n1 | awk '{print $2}')
+    if [[ -z "$UMASK_VAL" ]]; then
+        UMASK_VAL=$(awk '/^\s*UMASK\s+/{print $2}' /etc/login.defs 2>/dev/null | tail -n1)
+    fi
     if [[ "$UMASK_VAL" == "027" || "$UMASK_VAL" == "077" ]]; then
         print_pass "TWGCB-01-012-0238: 使用者預設 umask 為 $UMASK_VAL，符合 027 或更嚴格要求。"
     else
-        print_fail "TWGCB-01-012-0238: 使用者預設 umask 為 $UMASK_VAL，應為 027 或更嚴格。"
+        print_fail "TWGCB-01-012-0238: 使用者預設 umask 為 ${UMASK_VAL:-未設定}，應為 027 或更嚴格 (檢查 /etc/profile、/etc/bashrc、/etc/profile.d/*.sh 或 /etc/login.defs)。"
     fi
+
+    # --- v3.1 補齊：通行碼雜湊與帳戶鎖定強化 ---
+
+    # TWGCB-01-012-0221: 通行碼雜湊演算法為 SHA512
+    ENCRYPT_METHOD=$(awk '/^\s*ENCRYPT_METHOD\s+/{print $2}' /etc/login.defs 2>/dev/null | tail -n1)
+    if [[ "$ENCRYPT_METHOD" == "SHA512" ]]; then
+        # 進一步檢查 PAM 設定檔有指定 sha512 (RHEL 9 預設使用 pam_unix.so)
+        local pam_pass=1
+        for f in /etc/pam.d/system-auth /etc/pam.d/password-auth; do
+            if [ -f "$f" ] && ! grep -qE '^\s*password\s+\S+\s+pam_unix\.so\b.*\bsha512\b' "$f"; then
+                pam_pass=0
+                break
+            fi
+        done
+        if [[ $pam_pass -eq 1 ]]; then
+            print_pass "TWGCB-01-012-0221: 通行碼雜湊演算法已設為 SHA512 (login.defs 與 PAM 一致)。"
+        else
+            print_fail "TWGCB-01-012-0221: /etc/login.defs 已設 SHA512，但 /etc/pam.d/{system,password}-auth 之 pam_unix.so 未明確使用 sha512。"
+        fi
+    else
+        print_fail "TWGCB-01-012-0221: /etc/login.defs 之 ENCRYPT_METHOD 為 '${ENCRYPT_METHOD:-未設定}'，應為 SHA512。"
+    fi
+
+    # TWGCB-01-012-0310: even_deny_root 與 root_unlock_time
+    FAILLOCK_CONF="/etc/security/faillock.conf"
+    if [ -f "$FAILLOCK_CONF" ]; then
+        local even_deny_ok=0 root_unlock_ok=0
+        grep -qE '^\s*even_deny_root\s*$' "$FAILLOCK_CONF" && even_deny_ok=1
+        ROOT_UNLOCK_TIME=$(awk -F= '/^\s*root_unlock_time/{print $2}' "$FAILLOCK_CONF" | xargs)
+        if [[ "$ROOT_UNLOCK_TIME" =~ ^[0-9]+$ && "$ROOT_UNLOCK_TIME" -ge 60 ]]; then
+            root_unlock_ok=1
+        fi
+        if [[ $even_deny_ok -eq 1 && $root_unlock_ok -eq 1 ]]; then
+            print_pass "TWGCB-01-012-0310: faillock 已設定 even_deny_root 且 root_unlock_time=${ROOT_UNLOCK_TIME}。"
+        else
+            print_fail "TWGCB-01-012-0310: faillock 缺少設定 (even_deny_root=$even_deny_ok, root_unlock_time='${ROOT_UNLOCK_TIME:-未設定}')。應啟用 even_deny_root 並設定 root_unlock_time>=60。"
+        fi
+    else
+        print_fail "TWGCB-01-012-0310: $FAILLOCK_CONF 不存在，無法檢查。"
+    fi
+
+    # TWGCB-01-012-0311: pwquality maxsequence
+    PWQ_CONF="/etc/security/pwquality.conf"
+    if [ -f "$PWQ_CONF" ]; then
+        MAXSEQ=$(awk -F= '/^\s*maxsequence/{print $2}' "$PWQ_CONF" | xargs)
+        if [[ "$MAXSEQ" =~ ^[0-9]+$ && "$MAXSEQ" -ge 1 && "$MAXSEQ" -le 3 ]]; then
+            print_pass "TWGCB-01-012-0311: pwquality maxsequence 為 $MAXSEQ，符合 1-3 要求。"
+        else
+            print_fail "TWGCB-01-012-0311: pwquality maxsequence 為 '${MAXSEQ:-未設定}'，應設為 1-3。"
+        fi
+    else
+        print_fail "TWGCB-01-012-0311: $PWQ_CONF 不存在，無法檢查。"
+    fi
+}
+
+# cron 與 at 權限 (v3.1 新增 check_cron)
+check_cron() {
+    print_header "cron 與 at 排程權限"
+
+    # TWGCB-01-012-0189: 啟用 cron 守護程序
+    if systemctl is-enabled crond &> /dev/null && systemctl is-active crond &> /dev/null; then
+        print_pass "TWGCB-01-012-0189: crond 服務已啟用且正在執行。"
+    else
+        print_fail "TWGCB-01-012-0189: crond 服務未啟用或未執行。應 'systemctl --now enable crond'。"
+    fi
+
+    # TWGCB-01-012-0190 & 0191: /etc/crontab 擁有者與權限
+    if [ -f /etc/crontab ]; then
+        check_file_perms_owner "TWGCB-01-012-0190/91" "/etc/crontab" "600" "root:root"
+    else
+        print_info "TWGCB-01-012-0190/91: /etc/crontab 不存在，無法檢查。"
+    fi
+
+    # TWGCB-01-012-0192 ~ 0201: cron.* 目錄擁有者與權限
+    # 規範：每個目錄須 root:root 且權限 700；以「擁有者 / 權限」成對 ID 標示。
+    local cron_dir_pairs=(
+        "0192/93:/etc/cron.hourly"
+        "0194/95:/etc/cron.daily"
+        "0196/97:/etc/cron.weekly"
+        "0198/99:/etc/cron.monthly"
+        "0200/01:/etc/cron.d"
+    )
+    for pair in "${cron_dir_pairs[@]}"; do
+        local ids="${pair%%:*}"
+        local dir="${pair##*:}"
+        if [ -d "$dir" ]; then
+            check_file_perms_owner "TWGCB-01-012-${ids}" "$dir" "700" "root:root"
+        else
+            print_info "TWGCB-01-012-${ids}: ${dir} 不存在，無法檢查。"
+        fi
+    done
+
+    # TWGCB-01-012-0202 & 0203: 限制 at/cron 使用者
+    # 規範要求：/etc/cron.deny 與 /etc/at.deny 不應存在；
+    # /etc/cron.allow 與 /etc/at.allow 須存在、權限 640、root:root。
+    for entry in "0202:/etc/cron" "0203:/etc/at"; do
+        id="${entry%%:*}"
+        prefix="${entry##*:}"
+        deny_file="${prefix}.deny"
+        allow_file="${prefix}.allow"
+        if [ -f "$deny_file" ]; then
+            print_fail "TWGCB-01-012-${id}: ${deny_file} 不應存在，應刪除以改用 ${allow_file} 白名單。"
+        else
+            print_pass "TWGCB-01-012-${id}: ${deny_file} 不存在，符合白名單原則。"
+        fi
+        if [ -f "$allow_file" ]; then
+            check_file_perms_owner "TWGCB-01-012-${id}" "$allow_file" "640" "root:root"
+        else
+            print_fail "TWGCB-01-012-${id}: ${allow_file} 不存在，應建立空白檔案以限制可用使用者。"
+        fi
+    done
 }
 
 # SSH 伺服器
@@ -578,7 +708,17 @@ check_ssh() {
     fi
     
     # TWGCB-01-012-0255: SSH 協定版本
-    grep -qE "^\s*Protocol\s+2" "$SSHD_CONFIG" && print_pass "TWGCB-01-012-0255: SSH 協定版本已設為 2。" || print_fail "TWGCB-01-012-0255: SSH 協定版本未設為 2。"
+    # OpenSSH 7.4+ 已移除 Protocol 指令 (僅支援 v2)；若版本符合即視為通過。
+    SSHD_VER=$(ssh -V 2>&1 | grep -oE 'OpenSSH_[0-9]+\.[0-9]+' | head -n1 | sed 's/OpenSSH_//')
+    SSHD_MAJOR=${SSHD_VER%%.*}
+    SSHD_MINOR=${SSHD_VER##*.}
+    if grep -qE "^\s*Protocol\s+2" "$SSHD_CONFIG"; then
+        print_pass "TWGCB-01-012-0255: SSH 協定版本已設為 2 (sshd_config 明示)。"
+    elif [[ -n "$SSHD_VER" ]] && { [[ "$SSHD_MAJOR" -gt 7 ]] || { [[ "$SSHD_MAJOR" -eq 7 ]] && [[ "$SSHD_MINOR" -ge 4 ]]; }; }; then
+        print_pass "TWGCB-01-012-0255: OpenSSH ${SSHD_VER} 預設僅支援 Protocol 2，符合要求。"
+    else
+        print_fail "TWGCB-01-012-0255: SSH 協定版本未設為 2 (OpenSSH ${SSHD_VER:-未知})。"
+    fi
 
     # TWGCB-01-012-0256 & 0257: sshd_config 檔案權限
     check_file_perms_owner "TWGCB-01-012-0256/57" "$SSHD_CONFIG" "600" "root:root"
@@ -653,6 +793,7 @@ main() {
     check_network
     check_selinux
     check_accounts
+    check_cron
     check_ssh
 
     print_summary

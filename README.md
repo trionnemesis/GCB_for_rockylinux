@@ -337,11 +337,20 @@ sudo /usr/local/apache/bin/apachectl restart
 ---
 
 **維護者**：warden  
-**最後更新**：2026-06-11
-**版本**：2.1
+**最後更新**：2026-06-19
+**版本**：2.2
 
 ### 變更紀錄
 
+- **v2.2 (2026-06-19)**：補齊 v2.1 已宣告但未實作於 `GCB_check.sh` 的檢測項目，並對齊 `GCB_SET/GCB.sh` 之設定行為
+  - `GCB_check.sh`：
+    - 新增 `0221` 通行碼 SHA512 雜湊演算法檢查（`/etc/login.defs` ENCRYPT_METHOD 與 PAM `pam_unix.so sha512` 一致性）
+    - 新增 `0310` `even_deny_root` 與 `root_unlock_time` 檢查
+    - 新增 `0311` pwquality `maxsequence` 檢查 (1-3)
+    - 新增 `check_cron` 函式：`0189` crond 啟用、`0190/91` `/etc/crontab`、`0192~0201` `cron.{hourly,daily,weekly,monthly,d}` 目錄擁有者與權限、`0202/03` `at/cron` 白名單與 `.deny` 不應存在
+    - 修正 `0255` SSH `Protocol` 檢查邏輯：OpenSSH 7.4 以上預設僅支援 Protocol 2，依版本自動判定
+    - 擴大 `0235` TMOUT 與 `0238` umask 檢查範圍至 `/etc/profile.d/*.sh` 與 `/etc/login.defs`（`LOGIN_TIMEOUT` / `UMASK`）
+  - 依據：國家資通安全研究院 (NICS) `TWGCB-01-012 v1.2`（中華民國 114 年 6 月 12 日）
 - **v2.1 (2026-06-11)**：對齊 NICS 發布之 `TWGCB-01-012 v1.2`（中華民國 114 年 6 月 12 日）
   - `GCB_check.sh`：
     - 修正 `TWGCB-01-012-0285~0300` 檔案系統檢查使用實際規則編號（原為 `XXXX` 佔位符）
