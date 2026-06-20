@@ -1,10 +1,10 @@
 #!/bin/bash
 
 # ==============================================================================
-# Red Hat Enterprise Linux 9 政府組態基準 (TWGCB-01-012) v1.2 合規性檢測腳本 v3
+# Red Hat Enterprise Linux 9 政府組態基準 (TWGCB-01-012) v1.2 合規性檢測腳本 v4
 #
 # 作者: warden
-# 日期: 2026-06-15
+# 日期: 2026-06-20
 #
 # 功能更新:
 # 1. 新增日誌匯出功能至 /var/log/
@@ -15,6 +15,12 @@
 #    - 新增 sudo 相關檢查 (0033, 0034, 0035)
 #    - 新增 v1.2 新增項目：opasswd 權限 (0303, 0304)、/etc/shells nologin (0305)、
 #      chrony 非 root 執行 (0306)、ptrace 限制模式 (0307)
+# 5. v4 補齊 README 已宣告但未實作之檢測項目：
+#    - 新增 check_cron 函式：0189 crond、0190/91 /etc/crontab、
+#      0192~0201 cron.{hourly,daily,weekly,monthly,d}、0202/03 cron/at allow
+#    - 新增 0221 通行碼 SHA512 雜湊檢查 (login.defs ENCRYPT_METHOD 與 PAM)
+#    - 新增 0310 even_deny_root (faillock.conf) 檢查
+#    - 新增 0311 maxsequence (pwquality.conf) 檢查
 #
 # 來源依據：
 #   國家資通安全研究院 (NICS) TWGCB-01-012 v1.2 (中華民國114年6月12日)
@@ -522,7 +528,7 @@ check_accounts() {
     else
         print_fail "TWGCB-01-012-0218: 帳戶鎖定閾值 (deny) 為 $DENY，應設定為 1-5 次。"
     fi
-    
+
     # TWGCB-01-012-0219: 帳戶鎖定時間
     UNLOCK_TIME=$(grep '^\s*unlock_time' /etc/security/faillock.conf | awk -F= '{print $2}' | xargs)
     if [[ "$UNLOCK_TIME" -ge 900 ]]; then
@@ -531,7 +537,42 @@ check_accounts() {
         print_fail "TWGCB-01-012-0219: 帳戶鎖定時間 (unlock_time) 為 $UNLOCK_TIME 秒，應 >= 900。"
     fi
 
+    # TWGCB-01-012-0310: 鎖定機制套用至 root 帳號 (even_deny_root)
+    if grep -qE '^\s*even_deny_root\b' /etc/security/faillock.conf; then
+        ROOT_UNLOCK=$(grep -E '^\s*root_unlock_time' /etc/security/faillock.conf | awk -F= '{print $2}' | xargs)
+        if [[ -n "$ROOT_UNLOCK" && "$ROOT_UNLOCK" -gt 0 ]]; then
+            print_pass "TWGCB-01-012-0310: faillock 已啟用 even_deny_root，root_unlock_time=${ROOT_UNLOCK}。"
+        else
+            print_pass "TWGCB-01-012-0310: faillock 已啟用 even_deny_root。"
+            print_info "TWGCB-01-012-0310: 建議同時設定 root_unlock_time，避免 root 永久鎖定。"
+        fi
+    else
+        print_fail "TWGCB-01-012-0310: /etc/security/faillock.conf 未啟用 even_deny_root，root 帳號將不受鎖定機制保護。"
+    fi
+
+    # TWGCB-01-012-0311: 通行碼字元最大連續同類數量 (maxsequence)
+    MAXSEQ=$(grep -E '^\s*maxsequence' /etc/security/pwquality.conf | awk -F= '{print $2}' | xargs)
+    if [[ "$MAXSEQ" -gt 0 && "$MAXSEQ" -le 3 ]]; then
+        print_pass "TWGCB-01-012-0311: 通行碼最大連續同類字元 (maxsequence) 為 $MAXSEQ，符合 1-3 要求。"
+    else
+        print_fail "TWGCB-01-012-0311: 通行碼最大連續同類字元 (maxsequence) 為 '${MAXSEQ:-未設定}'，應設定為 1-3。"
+    fi
+
     print_header "帳號與存取控制 (2/2)"
+
+    # TWGCB-01-012-0221: 通行碼雜湊演算法應為 SHA512
+    ENC_METHOD=$(grep -E '^\s*ENCRYPT_METHOD' /etc/login.defs | awk '{print $2}')
+    if [[ "$ENC_METHOD" == "SHA512" ]]; then
+        print_pass "TWGCB-01-012-0221: /etc/login.defs ENCRYPT_METHOD 已設為 SHA512。"
+    else
+        print_fail "TWGCB-01-012-0221: /etc/login.defs ENCRYPT_METHOD 為 '${ENC_METHOD:-未設定}'，應為 SHA512。"
+    fi
+    if grep -qE '^\s*password\s+(sufficient|required)\s+pam_unix\.so.*\bsha512\b' /etc/pam.d/system-auth /etc/pam.d/password-auth 2>/dev/null; then
+        print_pass "TWGCB-01-012-0221: PAM (system-auth/password-auth) pam_unix.so 已啟用 sha512 參數。"
+    else
+        print_fail "TWGCB-01-012-0221: PAM 設定檔 pam_unix.so 未啟用 sha512 參數。"
+    fi
+
     # TWGCB-01-012-0222: 通行碼最短使用期限
     PASS_MIN_DAYS=$(grep '^\s*PASS_MIN_DAYS' /etc/login.defs | awk '{print $2}')
     if [[ "$PASS_MIN_DAYS" -ge 1 ]]; then
@@ -564,6 +605,62 @@ check_accounts() {
         print_pass "TWGCB-01-012-0238: 使用者預設 umask 為 $UMASK_VAL，符合 027 或更嚴格要求。"
     else
         print_fail "TWGCB-01-012-0238: 使用者預設 umask 為 $UMASK_VAL，應為 027 或更嚴格。"
+    fi
+}
+
+# cron / at 排程
+check_cron() {
+    print_header "cron 與 at 排程"
+
+    # TWGCB-01-012-0189: 啟用 cron 守護程序
+    if systemctl is-enabled crond &> /dev/null; then
+        print_pass "TWGCB-01-012-0189: crond 服務已啟用。"
+    else
+        print_fail "TWGCB-01-012-0189: crond 服務未啟用，應使用 'systemctl enable --now crond' 啟用。"
+    fi
+
+    # TWGCB-01-012-0190 & 0191: /etc/crontab 權限與擁有者
+    check_file_perms_owner "TWGCB-01-012-0190/91" "/etc/crontab" "600" "root:root"
+
+    # TWGCB-01-012-0192 ~ 0201: cron 子目錄權限與擁有者 (700, root:root)
+    declare -A CRON_DIR_IDS=(
+        ["0192/93"]="/etc/cron.hourly"
+        ["0194/95"]="/etc/cron.daily"
+        ["0196/97"]="/etc/cron.weekly"
+        ["0198/99"]="/etc/cron.monthly"
+        ["0200/01"]="/etc/cron.d"
+    )
+    for id in $(echo "${!CRON_DIR_IDS[@]}" | tr ' ' '\n' | sort); do
+        dir="${CRON_DIR_IDS[$id]}"
+        if [ -d "$dir" ]; then
+            check_file_perms_owner "TWGCB-01-012-${id}" "$dir" "700" "root:root"
+        else
+            print_info "TWGCB-01-012-${id}: $dir 不存在，無法檢查。"
+        fi
+    done
+
+    # TWGCB-01-012-0202: 限制 cron 使用者 (應存在 /etc/cron.allow 且不應有 /etc/cron.deny)
+    if [ -f /etc/cron.deny ]; then
+        print_fail "TWGCB-01-012-0202: /etc/cron.deny 存在，應刪除並改用 /etc/cron.allow 白名單。"
+    else
+        print_pass "TWGCB-01-012-0202: /etc/cron.deny 不存在。"
+    fi
+    if [ -f /etc/cron.allow ]; then
+        check_file_perms_owner "TWGCB-01-012-0202" "/etc/cron.allow" "600" "root:root"
+    else
+        print_fail "TWGCB-01-012-0202: /etc/cron.allow 不存在，應建立並設為 600/root:root。"
+    fi
+
+    # TWGCB-01-012-0203: 限制 at 使用者 (應存在 /etc/at.allow 且不應有 /etc/at.deny)
+    if [ -f /etc/at.deny ]; then
+        print_fail "TWGCB-01-012-0203: /etc/at.deny 存在，應刪除並改用 /etc/at.allow 白名單。"
+    else
+        print_pass "TWGCB-01-012-0203: /etc/at.deny 不存在。"
+    fi
+    if [ -f /etc/at.allow ]; then
+        check_file_perms_owner "TWGCB-01-012-0203" "/etc/at.allow" "600" "root:root"
+    else
+        print_fail "TWGCB-01-012-0203: /etc/at.allow 不存在，應建立並設為 600/root:root。"
     fi
 }
 
@@ -653,6 +750,7 @@ main() {
     check_network
     check_selinux
     check_accounts
+    check_cron
     check_ssh
 
     print_summary

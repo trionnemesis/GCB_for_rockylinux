@@ -337,11 +337,22 @@ sudo /usr/local/apache/bin/apachectl restart
 ---
 
 **維護者**：warden  
-**最後更新**：2026-06-11
-**版本**：2.1
+**最後更新**：2026-06-20
+**版本**：2.2
 
 ### 變更紀錄
 
+- **v2.2 (2026-06-20)**：對照 NICS 官網最新公告，補齊 `GCB_check.sh` 中 README 已宣告但尚未實作之檢測
+  - `GCB_check.sh`：
+    - 新增 `check_cron` 函式並納入主流程：`TWGCB-01-012-0189` crond 服務、
+      `0190/91` `/etc/crontab` 權限與擁有者、
+      `0192/93~0200/01` `cron.{hourly,daily,weekly,monthly,d}` 權限與擁有者、
+      `0202`、`0203` cron / at 使用者白名單 (`cron.allow`、`at.allow`、移除 `*.deny`)
+    - 新增 `0221` 通行碼 SHA512 雜湊檢查：同時驗證 `/etc/login.defs` 的
+      `ENCRYPT_METHOD` 與 `pam_unix.so` 的 `sha512` 參數
+    - 新增 `0310` `even_deny_root` 檢查 (含 `root_unlock_time` 提示)
+    - 新增 `0311` 通行碼 `maxsequence` 檢查
+  - 來源依據：國家資通安全研究院 (NICS) TWGCB-01-012 v1.2（中華民國 114 年 6 月 12 日）
 - **v2.1 (2026-06-11)**：對齊 NICS 發布之 `TWGCB-01-012 v1.2`（中華民國 114 年 6 月 12 日）
   - `GCB_check.sh`：
     - 修正 `TWGCB-01-012-0285~0300` 檔案系統檢查使用實際規則編號（原為 `XXXX` 佔位符）
