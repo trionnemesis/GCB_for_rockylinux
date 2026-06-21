@@ -337,20 +337,26 @@ sudo /usr/local/apache/bin/apachectl restart
 ---
 
 **維護者**：warden  
-**最後更新**：2026-06-11
-**版本**：2.1
+**最後更新**：2026-06-21
+**版本**：2.2
 
 ### 變更紀錄
 
+- **v2.2 (2026-06-21)**：補齊 `GCB_check.sh` 與 `GCB_SET/GCB.sh` 之 `TWGCB-01-012 v1.2` 對齊缺漏
+  - 新增 `check_cron` 函式：`0189`、`0190/91`、`0192~0201`、`0202`、`0203` cron / at 權限與白名單
+  - 新增 `0221` 通行碼 SHA512/YESCRYPT 雜湊驗證 (login.defs + pam_unix.so 雙檢查)
+  - 新增 v1.2 項目：`0308` rsyslog logrotate、`0309` root umask、
+    `0310` faillock even_deny_root、`0311` pwquality maxsequence、`0312` authselect without-nullok
+  - 修正 `0255` SSH `Protocol` 檢查邏輯：OpenSSH 7.4+ 預設僅支援 v2，未明確設定改以 INFO 標示；
+    僅在顯式設定 Protocol 1 / 1,2 時回報 FAIL
 - **v2.1 (2026-06-11)**：對齊 NICS 發布之 `TWGCB-01-012 v1.2`（中華民國 114 年 6 月 12 日）
   - `GCB_check.sh`：
     - 修正 `TWGCB-01-012-0285~0300` 檔案系統檢查使用實際規則編號（原為 `XXXX` 佔位符）
     - 補齊 `nfs_common (0298)`、`smbfs_common (0300)` 兩項
-    - 修正 `0255` SSH `Protocol` 檢查（OpenSSH 7.4+ 已移除該指令，預設僅支援 Protocol 2）
     - `0235 TMOUT` 與 `0238 umask` 檢查擴大涵蓋 `/etc/profile.d/*.sh` 與 `/etc/login.defs`
     - 新增 `0033` sudo 套件、`0034` use_pty、`0035` logfile 檢查
-    - 新增 `0221` 通行碼 SHA512 雜湊、`0310` even_deny_root、`0311` maxsequence
-    - 新增 `check_cron` 函式：`0189`、`0190/91`、`0192~0201`、`0202/03` cron / at 權限
+    - 新增 v1.2 新增項目：opasswd 權限 (`0303`, `0304`)、`/etc/shells` nologin (`0305`)、
+      chrony 非 root 執行 (`0306`)、ptrace 限制模式 (`0307`)
 - **v2.0**：新增日誌匯出至 `/var/log/`、檔案數量統計、CLI 統計摘要
 
 如有問題或建議，請透過 GitHub Issues 回報。

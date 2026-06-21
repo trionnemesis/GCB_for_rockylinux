@@ -1,10 +1,10 @@
 #!/bin/bash
 
 # ==============================================================================
-# Red Hat Enterprise Linux 9 政府組態基準 (TWGCB-01-012) v1.2 合規性檢測腳本 v3
+# Red Hat Enterprise Linux 9 政府組態基準 (TWGCB-01-012) v1.2 合規性檢測腳本 v3.1
 #
 # 作者: warden
-# 日期: 2026-06-15
+# 日期: 2026-06-21
 #
 # 功能更新:
 # 1. 新增日誌匯出功能至 /var/log/
@@ -15,6 +15,15 @@
 #    - 新增 sudo 相關檢查 (0033, 0034, 0035)
 #    - 新增 v1.2 新增項目：opasswd 權限 (0303, 0304)、/etc/shells nologin (0305)、
 #      chrony 非 root 執行 (0306)、ptrace 限制模式 (0307)
+# 5. v3.1 補齊與 GCB_SET/GCB.sh 之 v1.2 套用項目缺少之檢查：
+#    - 新增 check_cron 函式：0189 crond 啟用、0190/91 /etc/crontab、
+#      0192~0201 /etc/cron.* 目錄、0202 cron.allow/at.allow、0203 cron.deny/at.deny
+#    - 新增 0221 通行碼 SHA512/YESCRYPT 雜湊檢查 (login.defs + pam_unix.so)
+#    - 新增 v1.2 項目：0308 rsyslog logrotate、0309 root umask、
+#      0310 faillock even_deny_root、0311 pwquality maxsequence、
+#      0312 authselect without-nullok
+#    - 修正 0255 SSH Protocol 檢查 (OpenSSH 7.4+ 已移除該指令，預設僅支援
+#      Protocol 2，未明確設定改以 INFO 標示)
 #
 # 來源依據：
 #   國家資通安全研究院 (NICS) TWGCB-01-012 v1.2 (中華民國114年6月12日)
@@ -412,6 +421,13 @@ check_system_settings() {
     else
         print_fail "TWGCB-01-012-0307: kernel.yama.ptrace_scope 為 '${PTRACE_SCOPE:-未設定}'，應設為 1 (或更嚴格)。"
     fi
+
+    # v1.2 新增項目：TWGCB-01-012-0308: rsyslog 日誌輪替設定
+    if [ -f /etc/logrotate.d/rsyslog ] || [ -f /etc/logrotate.d/syslog ]; then
+        print_pass "TWGCB-01-012-0308: 已設定 rsyslog/syslog 日誌輪替 (logrotate)。"
+    else
+        print_fail "TWGCB-01-012-0308: 未發現 rsyslog/syslog 之 logrotate 設定檔。"
+    fi
 }
 
 # 系統服務
@@ -531,7 +547,36 @@ check_accounts() {
         print_fail "TWGCB-01-012-0219: 帳戶鎖定時間 (unlock_time) 為 $UNLOCK_TIME 秒，應 >= 900。"
     fi
 
+    # v1.2 新增項目：TWGCB-01-012-0310: 帳戶鎖定亦適用於 root
+    if grep -qE '^\s*even_deny_root\s*$' /etc/security/faillock.conf; then
+        print_pass "TWGCB-01-012-0310: faillock 已啟用 even_deny_root，root 亦受鎖定政策保護。"
+    else
+        print_fail "TWGCB-01-012-0310: faillock 未啟用 even_deny_root，root 不受鎖定政策保護。"
+    fi
+
+    # v1.2 新增項目：TWGCB-01-012-0311: 通行碼禁止連續相同字元數
+    MAXSEQ=$(grep -E '^\s*maxsequence' /etc/security/pwquality.conf | awk -F= '{print $2}' | xargs)
+    if [[ "$MAXSEQ" -gt 0 && "$MAXSEQ" -le 3 ]]; then
+        print_pass "TWGCB-01-012-0311: pwquality.conf maxsequence 為 $MAXSEQ，符合 1-3 要求。"
+    else
+        print_fail "TWGCB-01-012-0311: pwquality.conf maxsequence 為 '${MAXSEQ:-未設定}'，應設為 1-3。"
+    fi
+
     print_header "帳號與存取控制 (2/2)"
+
+    # TWGCB-01-012-0221: 通行碼雜湊演算法
+    ENCRYPT_METHOD=$(awk '/^\s*ENCRYPT_METHOD/{print $2}' /etc/login.defs)
+    if [[ "$ENCRYPT_METHOD" == "SHA512" || "$ENCRYPT_METHOD" == "YESCRYPT" ]]; then
+        print_pass "TWGCB-01-012-0221: /etc/login.defs ENCRYPT_METHOD 為 $ENCRYPT_METHOD，符合 SHA512/YESCRYPT 要求。"
+    else
+        print_fail "TWGCB-01-012-0221: /etc/login.defs ENCRYPT_METHOD 為 '${ENCRYPT_METHOD:-未設定}'，應為 SHA512 或 YESCRYPT。"
+    fi
+    if grep -hsqE '^\s*password\s+(sufficient|required)\s+pam_unix\.so.*\b(sha512|yescrypt)\b' /etc/pam.d/system-auth /etc/pam.d/password-auth; then
+        print_pass "TWGCB-01-012-0221: pam_unix.so 已指定 sha512/yescrypt 雜湊。"
+    else
+        print_fail "TWGCB-01-012-0221: /etc/pam.d/{system,password}-auth pam_unix.so 未指定 sha512 或 yescrypt。"
+    fi
+
     # TWGCB-01-012-0222: 通行碼最短使用期限
     PASS_MIN_DAYS=$(grep '^\s*PASS_MIN_DAYS' /etc/login.defs | awk '{print $2}')
     if [[ "$PASS_MIN_DAYS" -ge 1 ]]; then
@@ -565,6 +610,68 @@ check_accounts() {
     else
         print_fail "TWGCB-01-012-0238: 使用者預設 umask 為 $UMASK_VAL，應為 027 或更嚴格。"
     fi
+
+    # v1.2 新增項目：TWGCB-01-012-0309: root 預設 umask
+    ROOT_UMASK=$(grep -hE '^\s*umask\s+[0-7]+' /root/.bashrc /root/.bash_profile 2>/dev/null | tail -n1 | awk '{print $2}')
+    if [[ "$ROOT_UMASK" == "027" || "$ROOT_UMASK" == "077" ]]; then
+        print_pass "TWGCB-01-012-0309: root 預設 umask 為 $ROOT_UMASK，符合 027 或更嚴格要求。"
+    else
+        print_fail "TWGCB-01-012-0309: root 預設 umask 為 '${ROOT_UMASK:-未設定}'，應於 /root/.bashrc 或 /root/.bash_profile 設定 027 或更嚴格。"
+    fi
+
+    # v1.2 新增項目：TWGCB-01-012-0312: 禁用空白通行碼 (without-nullok)
+    if command -v authselect >/dev/null 2>&1; then
+        if authselect current 2>/dev/null | grep -qE '^\s*-\s*without-nullok\s*$'; then
+            print_pass "TWGCB-01-012-0312: authselect 已啟用 without-nullok。"
+        elif grep -hsqE '^\s*(auth|password)\s+\S+\s+pam_unix\.so\b.*\bnullok\b' /etc/pam.d/system-auth /etc/pam.d/password-auth; then
+            print_fail "TWGCB-01-012-0312: /etc/pam.d/{system,password}-auth pam_unix.so 仍允許 nullok (空白通行碼)，應啟用 without-nullok。"
+        else
+            print_pass "TWGCB-01-012-0312: pam_unix.so 未出現 nullok，已禁用空白通行碼。"
+        fi
+    else
+        print_skip "TWGCB-01-012-0312: 系統未安裝 authselect，無法驗證 without-nullok 狀態。"
+    fi
+}
+
+# cron / at 排程
+check_cron() {
+    print_header "cron / at 排程"
+
+    # TWGCB-01-012-0189: crond 服務啟用
+    if systemctl is-enabled crond &>/dev/null; then
+        print_pass "TWGCB-01-012-0189: crond 服務已啟用。"
+    else
+        print_fail "TWGCB-01-012-0189: crond 服務未啟用。"
+    fi
+
+    # TWGCB-01-012-0190 & 0191: /etc/crontab 所有權與權限
+    check_file_perms_owner "TWGCB-01-012-0190/91" "/etc/crontab" "600" "root:root"
+
+    # TWGCB-01-012-0192 ~ 0201: cron.* 目錄所有權與權限
+    local idx=192
+    for dir in /etc/cron.hourly /etc/cron.daily /etc/cron.weekly /etc/cron.monthly /etc/cron.d; do
+        local end=$((idx+1))
+        check_file_perms_owner "TWGCB-01-012-0$(printf %03d $idx)/$(printf %03d $end)" "$dir" "700" "root:root"
+        idx=$((idx+2))
+    done
+
+    # TWGCB-01-012-0202: /etc/cron.allow / /etc/at.allow 必須存在且權限正確
+    for f in /etc/cron.allow /etc/at.allow; do
+        if [ -f "$f" ]; then
+            check_file_perms_owner "TWGCB-01-012-0202" "$f" "600" "root:root"
+        else
+            print_fail "TWGCB-01-012-0202: $f 不存在，應建立並設為 600 root:root 以限制使用者。"
+        fi
+    done
+
+    # TWGCB-01-012-0203: /etc/cron.deny / /etc/at.deny 應移除
+    for f in /etc/cron.deny /etc/at.deny; do
+        if [ -e "$f" ]; then
+            print_fail "TWGCB-01-012-0203: $f 存在，應移除 (改以 *.allow 白名單限制)。"
+        else
+            print_pass "TWGCB-01-012-0203: $f 已移除。"
+        fi
+    done
 }
 
 # SSH 伺服器
@@ -578,7 +685,15 @@ check_ssh() {
     fi
     
     # TWGCB-01-012-0255: SSH 協定版本
-    grep -qE "^\s*Protocol\s+2" "$SSHD_CONFIG" && print_pass "TWGCB-01-012-0255: SSH 協定版本已設為 2。" || print_fail "TWGCB-01-012-0255: SSH 協定版本未設為 2。"
+    # OpenSSH 7.4+ 已移除 Protocol 指令，預設僅支援 SSH 協定版本 2。
+    # 若 sshd_config 仍出現顯式 Protocol 1 或 Protocol 1,2 視為 FAIL，其餘標示 INFO。
+    if grep -qE "^\s*Protocol\s+(1|1,2|2,1)\s*$" "$SSHD_CONFIG"; then
+        print_fail "TWGCB-01-012-0255: SSH 設定檔顯式包含 Protocol 1，應移除以僅啟用 Protocol 2。"
+    elif grep -qE "^\s*Protocol\s+2\s*$" "$SSHD_CONFIG"; then
+        print_pass "TWGCB-01-012-0255: SSH 協定版本顯式設為 2。"
+    else
+        print_info "TWGCB-01-012-0255: 未顯式設定 Protocol 指令；OpenSSH 7.4+ 預設僅支援 SSH 協定版本 2，視為符合。"
+    fi
 
     # TWGCB-01-012-0256 & 0257: sshd_config 檔案權限
     check_file_perms_owner "TWGCB-01-012-0256/57" "$SSHD_CONFIG" "600" "root:root"
@@ -653,6 +768,7 @@ main() {
     check_network
     check_selinux
     check_accounts
+    check_cron
     check_ssh
 
     print_summary
