@@ -337,11 +337,28 @@ sudo /usr/local/apache/bin/apachectl restart
 ---
 
 **維護者**：warden  
-**最後更新**：2026-06-11
-**版本**：2.1
+**最後更新**：2026-06-22
+**版本**：2.2
 
 ### 變更紀錄
 
+- **v2.2 (2026-06-22)**：補齊 `GCB_check.sh` 對 `GCB_SET/GCB.sh` 已套用項目之檢測
+  - 對應 NICS `TWGCB-01-012 v1.2`（中華民國 114 年 6 月 12 日）
+  - 新增 `check_cron` 函式：
+    - `0189` crond 服務、`0190/91` `/etc/crontab` 所有權與權限
+    - `0192~0201` `cron.hourly|daily|weekly|monthly|d` 目錄權限
+    - `0202/03` `cron.deny`/`at.deny` 不應存在、`cron.allow`/`at.allow` 權限
+    - `0204` rsyslog `cron.*` 寫入 `/var/log/cron`
+  - 新增 `check_system_settings`：`0308` `/etc/logrotate.d/rsyslog` 輪轉設定
+  - 新增 `check_accounts` 補齊項目：
+    - `0221` `login.defs ENCRYPT_METHOD=SHA512` 及 PAM `pam_unix.so sha512`
+    - `0226` `login.defs FAIL_DELAY >= 4`
+    - `0239/40` `/etc/login.defs UMASK`
+    - `0309` root 之預設 umask（`/root/.bashrc`、`/root/.bash_profile`）
+    - `0310` faillock `even_deny_root`、`root_unlock_time`
+    - `0311` pwquality `maxsequence`
+    - `0312` `authselect enable-feature without-nullok`
+  - `0238` umask 檢查改以 `grep -hE` 涵蓋 `/etc/profile.d/*.sh`
 - **v2.1 (2026-06-11)**：對齊 NICS 發布之 `TWGCB-01-012 v1.2`（中華民國 114 年 6 月 12 日）
   - `GCB_check.sh`：
     - 修正 `TWGCB-01-012-0285~0300` 檔案系統檢查使用實際規則編號（原為 `XXXX` 佔位符）
@@ -349,8 +366,6 @@ sudo /usr/local/apache/bin/apachectl restart
     - 修正 `0255` SSH `Protocol` 檢查（OpenSSH 7.4+ 已移除該指令，預設僅支援 Protocol 2）
     - `0235 TMOUT` 與 `0238 umask` 檢查擴大涵蓋 `/etc/profile.d/*.sh` 與 `/etc/login.defs`
     - 新增 `0033` sudo 套件、`0034` use_pty、`0035` logfile 檢查
-    - 新增 `0221` 通行碼 SHA512 雜湊、`0310` even_deny_root、`0311` maxsequence
-    - 新增 `check_cron` 函式：`0189`、`0190/91`、`0192~0201`、`0202/03` cron / at 權限
 - **v2.0**：新增日誌匯出至 `/var/log/`、檔案數量統計、CLI 統計摘要
 
 如有問題或建議，請透過 GitHub Issues 回報。
