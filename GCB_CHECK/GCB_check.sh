@@ -15,6 +15,12 @@
 #    - 新增 sudo 相關檢查 (0033, 0034, 0035)
 #    - 新增 v1.2 新增項目：opasswd 權限 (0303, 0304)、/etc/shells nologin (0305)、
 #      chrony 非 root 執行 (0306)、ptrace 限制模式 (0307)
+# 5. v3.1 補齊 GCB_SET/GCB.sh 已套用但未檢測之項目：
+#    - 新增 cron / at 權限檢查 (0189, 0190/91, 0192~0201, 0202/03, 0204)
+#    - 新增通行碼 SHA512 雜湊 (0221)
+#    - 新增 rsyslog logrotate (0308)、root umask (0309)、even_deny_root (0310)
+#    - 新增 maxsequence (0311)、without-nullok (0312)
+#    - 新增 SSH GSSAPIAuthentication=no (0315)
 #
 # 來源依據：
 #   國家資通安全研究院 (NICS) TWGCB-01-012 v1.2 (中華民國114年6月12日)
@@ -496,6 +502,70 @@ check_selinux() {
 }
 
 # 帳號與存取控制
+# cron / at 排程權限
+check_cron() {
+    print_header "cron / at 排程權限"
+
+    # TWGCB-01-012-0189: 啟用 cron 守護程序
+    if systemctl is-enabled crond &> /dev/null; then
+        print_pass "TWGCB-01-012-0189: crond 服務已啟用。"
+    else
+        print_fail "TWGCB-01-012-0189: crond 服務未啟用。"
+    fi
+
+    # TWGCB-01-012-0190 & 0191: /etc/crontab 所有權與權限
+    if [ -e /etc/crontab ]; then
+        check_file_perms_owner "TWGCB-01-012-0190/91" "/etc/crontab" "600" "root:root"
+    else
+        print_info "TWGCB-01-012-0190/91: /etc/crontab 不存在。"
+    fi
+
+    # TWGCB-01-012-0192 ~ 0201: 各 cron 目錄所有權與權限 (600 或更嚴格)
+    local cron_dir id
+    declare -A CRON_DIRS=(
+        ["/etc/cron.hourly"]="TWGCB-01-012-0192/93"
+        ["/etc/cron.daily"]="TWGCB-01-012-0194/95"
+        ["/etc/cron.weekly"]="TWGCB-01-012-0196/97"
+        ["/etc/cron.monthly"]="TWGCB-01-012-0198/99"
+        ["/etc/cron.d"]="TWGCB-01-012-0200/01"
+    )
+    for cron_dir in "${!CRON_DIRS[@]}"; do
+        id="${CRON_DIRS[$cron_dir]}"
+        if [ -d "$cron_dir" ]; then
+            check_file_perms_owner "$id" "$cron_dir" "700" "root:root"
+        else
+            print_info "$id: 目錄 $cron_dir 不存在。"
+        fi
+    done
+
+    # TWGCB-01-012-0202 & 0203: 限制 at/cron 使用者 (cron.allow / at.allow 存在且權限正確)
+    local allow_file
+    for allow_file in /etc/cron.allow /etc/at.allow; do
+        if [ -f "$allow_file" ]; then
+            check_file_perms_owner "TWGCB-01-012-0202/03" "$allow_file" "600" "root:root"
+        else
+            print_fail "TWGCB-01-012-0202/03: $allow_file 不存在，應建立並設定為 root:root 600。"
+        fi
+    done
+    if [ -f /etc/cron.deny ]; then
+        print_fail "TWGCB-01-012-0202/03: /etc/cron.deny 存在，應移除以避免與 cron.allow 衝突。"
+    else
+        print_pass "TWGCB-01-012-0202/03: /etc/cron.deny 已移除。"
+    fi
+    if [ -f /etc/at.deny ]; then
+        print_fail "TWGCB-01-012-0202/03: /etc/at.deny 存在，應移除以避免與 at.allow 衝突。"
+    else
+        print_pass "TWGCB-01-012-0202/03: /etc/at.deny 已移除。"
+    fi
+
+    # TWGCB-01-012-0204: 啟用 cron 日誌記錄
+    if grep -rqsE '^\s*cron\.\*' /etc/rsyslog.conf /etc/rsyslog.d/ 2>/dev/null; then
+        print_pass "TWGCB-01-012-0204: rsyslog 已設定 cron 日誌記錄。"
+    else
+        print_fail "TWGCB-01-012-0204: rsyslog 未設定 cron 日誌記錄。應於 /etc/rsyslog.conf 或 /etc/rsyslog.d/ 加入 'cron.*' 規則。"
+    fi
+}
+
 check_accounts() {
     print_header "帳號與存取控制 (1/2)"
     
@@ -531,6 +601,21 @@ check_accounts() {
         print_fail "TWGCB-01-012-0219: 帳戶鎖定時間 (unlock_time) 為 $UNLOCK_TIME 秒，應 >= 900。"
     fi
 
+    # TWGCB-01-012-0310: 鎖定原則同樣套用 root (even_deny_root)
+    if grep -qE '^\s*even_deny_root' /etc/security/faillock.conf 2>/dev/null; then
+        print_pass "TWGCB-01-012-0310: faillock 已設定 even_deny_root，鎖定原則套用至 root。"
+    else
+        print_fail "TWGCB-01-012-0310: faillock 未設定 even_deny_root，應於 /etc/security/faillock.conf 加入。"
+    fi
+
+    # TWGCB-01-012-0311: 通行碼最大連續字元數 (maxsequence)
+    MAXSEQ=$(grep -E '^\s*maxsequence' /etc/security/pwquality.conf 2>/dev/null | awk -F= '{print $2}' | xargs)
+    if [[ "$MAXSEQ" =~ ^[0-9]+$ && "$MAXSEQ" -gt 0 && "$MAXSEQ" -le 3 ]]; then
+        print_pass "TWGCB-01-012-0311: 通行碼最大連續字元數 (maxsequence) 為 $MAXSEQ，符合 1-3 要求。"
+    else
+        print_fail "TWGCB-01-012-0311: 通行碼最大連續字元數 (maxsequence) 為 '${MAXSEQ:-未設定}'，應設定為 1-3。"
+    fi
+
     print_header "帳號與存取控制 (2/2)"
     # TWGCB-01-012-0222: 通行碼最短使用期限
     PASS_MIN_DAYS=$(grep '^\s*PASS_MIN_DAYS' /etc/login.defs | awk '{print $2}')
@@ -564,6 +649,54 @@ check_accounts() {
         print_pass "TWGCB-01-012-0238: 使用者預設 umask 為 $UMASK_VAL，符合 027 或更嚴格要求。"
     else
         print_fail "TWGCB-01-012-0238: 使用者預設 umask 為 $UMASK_VAL，應為 027 或更嚴格。"
+    fi
+
+    # TWGCB-01-012-0221: 通行碼雜湊演算法為 SHA512
+    ENCRYPT=$(grep -E '^\s*ENCRYPT_METHOD' /etc/login.defs 2>/dev/null | awk '{print $2}')
+    if [[ "$ENCRYPT" == "SHA512" ]]; then
+        print_pass "TWGCB-01-012-0221: /etc/login.defs ENCRYPT_METHOD 已設為 SHA512。"
+    else
+        print_fail "TWGCB-01-012-0221: /etc/login.defs ENCRYPT_METHOD 為 '${ENCRYPT:-未設定}'，應為 SHA512。"
+    fi
+
+    # TWGCB-01-012-0308: rsyslog logrotate 設定
+    if [ -f /etc/logrotate.d/rsyslog ]; then
+        if grep -qE '^\s*(weekly|daily|monthly)' /etc/logrotate.d/rsyslog && \
+           grep -qE '^\s*rotate\s+[0-9]+' /etc/logrotate.d/rsyslog; then
+            print_pass "TWGCB-01-012-0308: /etc/logrotate.d/rsyslog 已設定 logrotate 規則。"
+        else
+            print_fail "TWGCB-01-012-0308: /etc/logrotate.d/rsyslog 缺少必要之 rotate 設定。"
+        fi
+    else
+        print_fail "TWGCB-01-012-0308: /etc/logrotate.d/rsyslog 不存在，未啟用 rsyslog logrotate。"
+    fi
+
+    # TWGCB-01-012-0309: root 預設 umask
+    ROOT_UMASK=""
+    for f in /root/.bashrc /root/.bash_profile; do
+        if [ -f "$f" ]; then
+            ROOT_UMASK=$(grep -E '^\s*umask\s+0?27' "$f" | tail -n1 | awk '{print $2}')
+            [ -n "$ROOT_UMASK" ] && break
+        fi
+    done
+    if [[ "$ROOT_UMASK" == "027" || "$ROOT_UMASK" == "077" ]]; then
+        print_pass "TWGCB-01-012-0309: root 預設 umask 為 $ROOT_UMASK，符合要求。"
+    else
+        print_fail "TWGCB-01-012-0309: root 之 /root/.bashrc 或 /root/.bash_profile 未設定 umask 027/077。"
+    fi
+
+    # TWGCB-01-012-0312: 啟用 authselect without-nullok 功能
+    if command -v authselect &>/dev/null; then
+        if authselect list-features "$(authselect current 2>/dev/null | awk -F: '/Profile ID/{print $2}' | xargs)" 2>/dev/null | grep -qE '^\s*-?\s*without-nullok' && \
+           authselect current 2>/dev/null | grep -qE 'without-nullok'; then
+            print_pass "TWGCB-01-012-0312: authselect 已啟用 without-nullok 功能。"
+        elif authselect current 2>/dev/null | grep -qE 'without-nullok'; then
+            print_pass "TWGCB-01-012-0312: authselect 已啟用 without-nullok 功能。"
+        else
+            print_fail "TWGCB-01-012-0312: authselect 未啟用 without-nullok。請執行: authselect enable-feature without-nullok"
+        fi
+    else
+        print_info "TWGCB-01-012-0312: 系統未安裝 authselect，無法檢查。"
     fi
 }
 
@@ -609,6 +742,12 @@ check_ssh() {
     # TWGCB-01-012-0274: SSH UsePAM
     grep -qE "^\s*UsePAM\s+yes" "$SSHD_CONFIG" && print_pass "TWGCB-01-012-0274: SSH UsePAM 已設為 yes。" || print_fail "TWGCB-01-012-0274: SSH UsePAM 未設為 yes。"
 
+    # TWGCB-01-012-0315: 停用 GSSAPI 驗證
+    if grep -qE "^\s*GSSAPIAuthentication\s+no" "$SSHD_CONFIG"; then
+        print_pass "TWGCB-01-012-0315: SSH GSSAPIAuthentication 已設為 no。"
+    else
+        print_fail "TWGCB-01-012-0315: SSH GSSAPIAuthentication 未設為 no (預設為 yes)。"
+    fi
 }
 
 print_summary() {
@@ -652,6 +791,7 @@ main() {
     check_software
     check_network
     check_selinux
+    check_cron
     check_accounts
     check_ssh
 

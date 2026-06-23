@@ -1,9 +1,10 @@
 #!/bin/bash
 
 # ==============================================================================
-# Red Hat Enterprise Linux 9 GCB 組態基準套用腳本 (v1.2)
+# Red Hat Enterprise Linux 9 GCB 組態基準套用腳本 (v1.2, 1140612)
 # ------------------------------------------------------------------------------
 # 來源文件: TWGCB-01-012_Red Hat Enterprise Linux 9政府組態基準說明文件(伺服器)v1.2
+# 發行日期: 中華民國114年6月12日 (2025-06-12) by NICS
 # 產生日期: 2025-06-17
 # 作者:warden
 #
@@ -374,12 +375,16 @@ apply_system_settings() {
     fi
     
     echo "[*] TWGCB-01-012-0306: 禁止 chrony 以 root 權限執行..."
-    if grep -q "OPTIONS=" /etc/sysconfig/chronyd; then
-        sed -i 's/OPTIONS=".*"/OPTIONS="-F 2"/' /etc/sysconfig/chronyd
+    if [ -f /etc/sysconfig/chronyd ]; then
+        if grep -qE '^\s*OPTIONS=' /etc/sysconfig/chronyd; then
+            sed -i -E 's/^\s*OPTIONS=.*/OPTIONS="-F 2"/' /etc/sysconfig/chronyd
+        else
+            echo 'OPTIONS="-F 2"' >> /etc/sysconfig/chronyd
+        fi
     else
-        echo 'OPTIONS="-F 2"' >> /etc/sysconfig/chronyd
+        echo 'OPTIONS="-F 2"' > /etc/sysconfig/chronyd
     fi
-    systemctl restart chronyd.service
+    systemctl restart chronyd.service 2>/dev/null || true
 
     echo "[*] TWGCB-01-012-0307: 啟用 ptrace 限制模式..."
     echo "kernel.yama.ptrace_scope = 1" >> /etc/sysctl.d/60-gcb.conf
