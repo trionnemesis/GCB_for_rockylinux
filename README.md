@@ -337,20 +337,38 @@ sudo /usr/local/apache/bin/apachectl restart
 ---
 
 **維護者**：warden  
-**最後更新**：2026-06-11
-**版本**：2.1
+**最後更新**：2026-06-28
+**版本**：2.2
 
 ### 變更紀錄
 
+- **v2.2 (2026-06-28)**：補齊 `GCB_check.sh` 與 `GCB.sh` 之間的規則差異，並修正錯誤的 TWGCB ID 對應
+  - 來源依據：NICS `TWGCB-01-012 v1.2`（中華民國 114 年 6 月 12 日，當前最新版本）
+  - `GCB_check.sh`：
+    - 修正 ID 對應錯誤：原 `0235`（TMOUT）→ `0236`；原 `0238`（umask）→ `0239/0240`
+    - 新增 `0235` 系統帳號 shell 為 `nologin/false` 檢查
+    - 新增 `0238` root 帳號主要群組 GID = 0 檢查
+    - 新增 `0309` root 帳號 `.bashrc`/`.bash_profile` 之 umask 檢查
+    - 擴大 `0236 TMOUT` 與 `0239/40 umask` 檢查至 `/etc/profile.d/*.sh` 與 `/etc/login.defs (UMASK)`
+    - 修正 `0255` SSH `Protocol` 檢查：未顯式設定即視為合規（OpenSSH 7.4+ 已移除該指令）；
+      僅當顯式設定 `Protocol 1` 時判定為不合規
+    - 新增 `0221` 通行碼 SHA512 雜湊（同時檢查 `/etc/login.defs` 與 PAM）
+    - 新增 `0310` faillock `even_deny_root` 與 `root_unlock_time` 檢查
+    - 新增 `0311` pwquality `maxsequence` (≤3) 檢查
+    - 新增 `0312` authselect `without-nullok`（或 PAM 不含 `nullok`）檢查
+    - 新增 `check_cron` 函式：
+      - `0189` crond 服務、`0190/91` `/etc/crontab` 權限與擁有者
+      - `0192/93`~`0200/01` `/etc/cron.{hourly,daily,weekly,monthly,d}` 目錄權限
+      - `0202` cron 使用者限制（`cron.allow` 並移除 `cron.deny`）
+      - `0203` at 使用者限制（`at.allow` 並移除 `at.deny`）
+      - `0204` rsyslog 啟用 cron 日誌記錄
 - **v2.1 (2026-06-11)**：對齊 NICS 發布之 `TWGCB-01-012 v1.2`（中華民國 114 年 6 月 12 日）
   - `GCB_check.sh`：
     - 修正 `TWGCB-01-012-0285~0300` 檔案系統檢查使用實際規則編號（原為 `XXXX` 佔位符）
     - 補齊 `nfs_common (0298)`、`smbfs_common (0300)` 兩項
-    - 修正 `0255` SSH `Protocol` 檢查（OpenSSH 7.4+ 已移除該指令，預設僅支援 Protocol 2）
-    - `0235 TMOUT` 與 `0238 umask` 檢查擴大涵蓋 `/etc/profile.d/*.sh` 與 `/etc/login.defs`
     - 新增 `0033` sudo 套件、`0034` use_pty、`0035` logfile 檢查
-    - 新增 `0221` 通行碼 SHA512 雜湊、`0310` even_deny_root、`0311` maxsequence
-    - 新增 `check_cron` 函式：`0189`、`0190/91`、`0192~0201`、`0202/03` cron / at 權限
+    - 新增 v1.2 新增項目：opasswd 權限 (`0303`, `0304`)、`/etc/shells nologin` (`0305`)、
+      chrony 非 root 執行 (`0306`)、ptrace 限制模式 (`0307`)
 - **v2.0**：新增日誌匯出至 `/var/log/`、檔案數量統計、CLI 統計摘要
 
 如有問題或建議，請透過 GitHub Issues 回報。
