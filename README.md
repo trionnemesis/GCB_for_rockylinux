@@ -356,12 +356,16 @@ sudo /usr/local/apache/bin/apachectl restart
     - 新增 `0310` faillock `even_deny_root` 與 `root_unlock_time` 檢查
     - 新增 `0311` pwquality `maxsequence` (≤3) 檢查
     - 新增 `0312` authselect `without-nullok`（或 PAM 不含 `nullok`）檢查
+    - 新增 `0308` rsyslog logrotate 與 `0315` SSH `GSSAPIAuthentication=no` 檢查
     - 新增 `check_cron` 函式：
       - `0189` crond 服務、`0190/91` `/etc/crontab` 權限與擁有者
       - `0192/93`~`0200/01` `/etc/cron.{hourly,daily,weekly,monthly,d}` 目錄權限
       - `0202` cron 使用者限制（`cron.allow` 並移除 `cron.deny`）
       - `0203` at 使用者限制（`at.allow` 並移除 `at.deny`）
       - `0204` rsyslog 啟用 cron 日誌記錄
+  - `GCB.sh`：
+    - Header 補上 `(1140612)` 版本標記與 NICS 發行日期
+    - 修正 `0306` chronyd `OPTIONS` 設定，正確移除既有 `-u root` 參數
 - **v2.1 (2026-06-11)**：對齊 NICS 發布之 `TWGCB-01-012 v1.2`（中華民國 114 年 6 月 12 日）
   - `GCB_check.sh`：
     - 修正 `TWGCB-01-012-0285~0300` 檔案系統檢查使用實際規則編號（原為 `XXXX` 佔位符）

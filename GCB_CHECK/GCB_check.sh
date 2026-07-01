@@ -23,6 +23,7 @@
 #    - 新增 0221 SHA512 雜湊 (PAM/login.defs)、0309 root umask
 #    - 新增帳戶鎖定相關 0310 even_deny_root/root_unlock_time、0311 maxsequence、
 #      0312 authselect without-nullok
+#    - 新增 0308 rsyslog logrotate、0315 SSH GSSAPIAuthentication 檢查
 #    - 修正 0255 SSH Protocol：OpenSSH 7.4+ 已移除指令，未顯式指定 Protocol 1 即 PASS
 #    - 擴大 0236 TMOUT 與 0239/40 umask 檢查至 /etc/profile.d/*.sh 與 /etc/login.defs
 #
@@ -661,6 +662,15 @@ check_accounts() {
     else
         print_fail "TWGCB-01-012-0309: root 之 umask 未正確設定 (.bashrc=${ROOT_UMASK_BASHRC:-未設定}, .bash_profile=${ROOT_UMASK_PROFILE:-未設定})。"
     fi
+
+    # TWGCB-01-012-0308: rsyslog logrotate 設定
+    if [ -f /etc/logrotate.d/rsyslog ] && \
+       grep -qE '^\s*(weekly|daily|monthly)' /etc/logrotate.d/rsyslog && \
+       grep -qE '^\s*rotate\s+[0-9]+' /etc/logrotate.d/rsyslog; then
+        print_pass "TWGCB-01-012-0308: /etc/logrotate.d/rsyslog 已設定 logrotate 規則。"
+    else
+        print_fail "TWGCB-01-012-0308: /etc/logrotate.d/rsyslog 缺少必要之 logrotate 設定。"
+    fi
 }
 
 # cron 與 at
@@ -773,6 +783,13 @@ check_ssh() {
 
     # TWGCB-01-012-0274: SSH UsePAM
     grep -qE "^\s*UsePAM\s+yes" "$SSHD_CONFIG" && print_pass "TWGCB-01-012-0274: SSH UsePAM 已設為 yes。" || print_fail "TWGCB-01-012-0274: SSH UsePAM 未設為 yes。"
+
+    # TWGCB-01-012-0315: 停用 GSSAPI 驗證
+    if grep -qE "^\s*GSSAPIAuthentication\s+no" "$SSHD_CONFIG"; then
+        print_pass "TWGCB-01-012-0315: SSH GSSAPIAuthentication 已設為 no。"
+    else
+        print_fail "TWGCB-01-012-0315: SSH GSSAPIAuthentication 未設為 no。"
+    fi
 
 }
 
