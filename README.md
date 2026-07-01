@@ -337,11 +337,12 @@ sudo /usr/local/apache/bin/apachectl restart
 ---
 
 **維護者**：warden  
-**最後更新**：2026-06-11
+**最後更新**：2026-07-01
 **版本**：2.1
 
 ### 變更紀錄
 
+- **2026-07-01 基準版本複查**：對照 NICS [GCB 說明文件](https://www.nics.nat.gov.tw/core_business/cybersecurity_defense/GCB/GCB_Documentation/)確認 Red Hat Enterprise Linux 9 之最新政府組態基準仍為 `TWGCB-01-012 v1.2`（中華民國 114 年 6 月 12 日 / 1140612），本專案已對齊，**無新版可更新**。同期 RHEL 8 為 `TWGCB-01-008 v1.3`、Apache 為 `TWGCB-04-007 v1.2`。（115 年版本目前僅有預告版，尚未正式發布；待正式版發布後再行更新。）
 - **v2.1 (2026-06-11)**：對齊 NICS 發布之 `TWGCB-01-012 v1.2`（中華民國 114 年 6 月 12 日）
   - `GCB_check.sh`：
     - 修正 `TWGCB-01-012-0285~0300` 檔案系統檢查使用實際規則編號（原為 `XXXX` 佔位符）
