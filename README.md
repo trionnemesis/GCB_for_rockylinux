@@ -4,6 +4,10 @@
 [![OS](https://img.shields.io/badge/OS-Rocky%20Linux%209-red.svg)](https://rockylinux.org/)
 [![Shell](https://img.shields.io/badge/Shell-Bash-green.svg)](https://www.gnu.org/software/bash/)
 
+一鍵檢測與套用 Rocky Linux 9 / RHEL 9 的臺灣政府組態基準 (GCB)，讓系統資安硬化不必再靠人工逐條核對。
+
+This project provides Bash scripts that automate compliance checking and hardening for Taiwan's Government Configuration Baseline (TWGCB-01-012) on Rocky Linux 9 / RHEL 9, covering OS-level and Apache HTTP Server settings. It replaces manual, checklist-driven audits with repeatable, read-only checks and scripted remediation, backed by detailed logs for every run.
+
 這是一套協助系統工程師將 Rocky Linux 9 系統設定符合臺灣政府組態基準 (GCB) 資安要求的自動化工具集，提供完整的檢測與設定功能。
 
 ## 📋 目錄
@@ -175,9 +179,13 @@ Rocky-Linux-9-GCB/
 
 ### 建議流程：檢測 → 設定 → 再檢測
 
-#### 1. 執行權限設定
+#### 1. Clone 專案並設定執行權限
 ```bash
-# 下載或clone專案後，設定執行權限
+# Clone 專案
+git clone https://github.com/trionnemesis/GCB_for_rockylinux.git
+cd GCB_for_rockylinux
+
+# 設定執行權限
 chmod +x GCB_CHECK/*.sh
 chmod +x GCB_SET/*.sh
 ```
@@ -354,3 +362,7 @@ sudo /usr/local/apache/bin/apachectl restart
 - **v2.0**：新增日誌匯出至 `/var/log/`、檔案數量統計、CLI 統計摘要
 
 如有問題或建議，請透過 GitHub Issues 回報。
+
+## 🔗 Related projects
+
+- [GCB_for_window11](https://github.com/trionnemesis/GCB_for_window11) — 同系列的 Windows 11 GCB 自動化檢測與套用腳本
