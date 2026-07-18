@@ -79,7 +79,7 @@ This project provides Bash scripts that automate compliance checking and hardeni
 Rocky-Linux-9-GCB/
 ├── README.md                          # 專案說明文件
 ├── GCB_CHECK/                         # 檢測腳本目錄 (唯讀操作)
-│   ├── GCB_check.sh                   # 主要 OS GCB 合規性檢測 (572行)
+│   ├── GCB_check.sh                   # 主要 OS GCB 合規性檢測 (850行)
 │   └── GCB_check_apache.sh            # Apache 2.4 GCB 合規性檢測 (592行)
 └── GCB_SET/                           # 設定腳本目錄 (會修改系統)
     ├── GCB.sh                         # 主要 OS GCB 組態套用 (971行)
@@ -101,6 +101,7 @@ Rocky-Linux-9-GCB/
   - 網路安全設定
   - SELinux 配置
   - 帳號與存取控制
+  - cron 與 at 排程限制
   - SSH 伺服器設定
 - **輸出格式**：
   - 終端機彩色顯示：🟢 PASS、🔴 FAIL、🟡 SKIP
@@ -344,21 +345,33 @@ sudo /usr/local/apache/bin/apachectl restart
 
 ---
 
-**維護者**：warden  
-**最後更新**：2026-06-11
-**版本**：2.1
+**維護者**：warden
+**最後更新**：2026-07-17
+**版本**：2.2
 
 ### 變更紀錄
 
+- **v2.2 (2026-07-17)**：補齊 `GCB_check.sh` 與 `GCB_SET/GCB.sh`（及 `GCB_SET/GCB_sshd.sh`）之間的規則覆蓋落差，並修正 v2.1 變更紀錄中「已完成」但實際程式碼尚未落地之項目
+  - **基準版本複核**：確認 NICS（國家資通安全研究院）現行公告仍為 `TWGCB-01-012 v1.2`（中華民國114年6月12日 / 1140612）與 `TWGCB-04-007 v1.2`，未發現官方已發布新版本。本工作階段的網路政策阻擋直接連線 `www.nics.nat.gov.tw` / `download.nics.nat.gov.tw`（回應403），已改以公開網路搜尋交叉比對官方檔名與發布資訊確認版本未變。
+  - **修正說明落差**：v2.1 變更紀錄曾記載「0255 SSH Protocol 檢查修正」「0235 TMOUT 與 0238 umask 檢查擴大涵蓋」「0221/0310/0311 檢查新增」「`check_cron` 函式新增」等項目，但實際程式碼於 v2.1 當時並未真正落地。本次一併補齊程式碼，使其與紀錄相符，並修正 ID 對應錯誤：
+    - 修正 ID 對應：原 `0235`（TMOUT）→ 正確應為 `0236`；原 `0238`（umask）→ 正確應為 `0239/0240`（與 `GCB_SET/GCB.sh` 中對應規則標籤一致）
+    - 新增 `0235` 系統帳號（UID < UID_MIN）shell 應為 nologin/false 檢查
+    - 新增 `0238` root 帳號主要群組 GID = 0 檢查
+    - 新增 `0221` 通行碼 SHA512 雜湊檢查（同時檢查 `/etc/login.defs` 與 PAM）
+    - 新增 `0308` rsyslog logrotate 設定檢查
+    - 新增 `0309` root 帳號（`.bashrc`/`.bash_profile`）umask 檢查
+    - 新增帳戶鎖定相關 `0310` faillock even_deny_root/root_unlock_time、`0311` pwquality maxsequence 檢查
+    - 新增 `0312` authselect without-nullok（或 PAM 不含 nullok）檢查
+    - 新增 `0315` SSH GSSAPIAuthentication=no 檢查（對應 `GCB_SET/GCB_sshd.sh` 之設定）
+    - 新增 `check_cron` 函式，補齊 `0189`（crond 服務）、`0190/91`（`/etc/crontab` 權限）、`0192/93`~`0200/01`（`cron.{hourly,daily,weekly,monthly,d}` 目錄權限）、`0202`（cron.allow）、`0203`（at.allow）、`0204`（cron 日誌記錄）
+    - 修正 `0255` SSH `Protocol` 檢查：OpenSSH 7.4+ 已移除該指令，未顯式設定即視為合規；僅當顯式設定為 `Protocol 1` 時才判定不合規
+    - `0236` TMOUT 與 `0239/40` umask 檢查涵蓋範圍擴大至 `/etc/profile.d/*.sh` 與 `/etc/login.defs`
+  - 此問題與程式碼修正方向已於 issue #4 及既有草稿 PR #16–#22、#24、#27（與 #24 內容重複）中多次提出；本次於最新 `main` 之上重新驗證每一項規則的邏輯（逐一比對 `GCB_SET/GCB.sh` 實際套用的設定值），並直接落地至 `GCB_CHECK/GCB_check.sh`。
 - **v2.1 (2026-06-11)**：對齊 NICS 發布之 `TWGCB-01-012 v1.2`（中華民國 114 年 6 月 12 日）
   - `GCB_check.sh`：
     - 修正 `TWGCB-01-012-0285~0300` 檔案系統檢查使用實際規則編號（原為 `XXXX` 佔位符）
     - 補齊 `nfs_common (0298)`、`smbfs_common (0300)` 兩項
-    - 修正 `0255` SSH `Protocol` 檢查（OpenSSH 7.4+ 已移除該指令，預設僅支援 Protocol 2）
-    - `0235 TMOUT` 與 `0238 umask` 檢查擴大涵蓋 `/etc/profile.d/*.sh` 與 `/etc/login.defs`
     - 新增 `0033` sudo 套件、`0034` use_pty、`0035` logfile 檢查
-    - 新增 `0221` 通行碼 SHA512 雜湊、`0310` even_deny_root、`0311` maxsequence
-    - 新增 `check_cron` 函式：`0189`、`0190/91`、`0192~0201`、`0202/03` cron / at 權限
 - **v2.0**：新增日誌匯出至 `/var/log/`、檔案數量統計、CLI 統計摘要
 
 如有問題或建議，請透過 GitHub Issues 回報。
