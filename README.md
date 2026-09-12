@@ -346,11 +346,16 @@ sudo /usr/local/apache/bin/apachectl restart
 ---
 
 **維護者**：warden
-**最後更新**：2026-07-17
+**最後更新**：2026-09-12
 **版本**：2.2
 
 ### 變更紀錄
 
+- **2026-09-12（複核，無規則異動）**：依排程任務再次核對 NICS（國家資通安全研究院）現行公告之 GCB 版本。
+  - 本工作階段的網路政策同樣封鎖直接連線 `www.nics.nat.gov.tw` / `download.nics.nat.gov.tw`（egress 被擋），改以公開網路搜尋交叉比對官方文件檔名與發布資訊。
+  - 確認 **`TWGCB-01-012`（Red Hat Enterprise Linux 9 政府組態基準說明文件，伺服器）現行仍為 v1.2（中華民國114年6月12日 / 1140612）**，與 **`TWGCB-04-007`（Apache HTTP Server 2.4）v1.2** 一致，與 2026-07-17（v2.2）、2026-08-19、2026-09-10 三次複核結論相同，未發現官方已發布新版本。
+  - 進一步查證 NICS 網站「115年政府組態基準GCB說明文件（預告版）」頁面（`/core_business/cybersecurity_defense/GCB/gcbreview/`）之公開報導內容，115年度新增項目為 **Apple macOS 15.x（TWGCB-01-015，預告版，約68項）** 與 **Fortinet FortiGate（TWGCB-03-006，預告版）**，均未見 Red Hat Enterprise Linux 9 或 Apache HTTP Server 2.4 相關項目被列入本次預告更新範圍，故本次**不**調整任何規則期望值或版本標示。
+  - 因此本次**未修改** `GCB_CHECK/*.sh` 或 `GCB_SET/*.sh` 之任何檢測邏輯或期望值，僅更新本文件之複核紀錄與最後更新日期。
 - **v2.2 (2026-07-17)**：補齊 `GCB_check.sh` 與 `GCB_SET/GCB.sh`（及 `GCB_SET/GCB_sshd.sh`）之間的規則覆蓋落差，並修正 v2.1 變更紀錄中「已完成」但實際程式碼尚未落地之項目
   - **基準版本複核**：確認 NICS（國家資通安全研究院）現行公告仍為 `TWGCB-01-012 v1.2`（中華民國114年6月12日 / 1140612）與 `TWGCB-04-007 v1.2`，未發現官方已發布新版本。本工作階段的網路政策阻擋直接連線 `www.nics.nat.gov.tw` / `download.nics.nat.gov.tw`（回應403），已改以公開網路搜尋交叉比對官方檔名與發布資訊確認版本未變。
   - **修正說明落差**：v2.1 變更紀錄曾記載「0255 SSH Protocol 檢查修正」「0235 TMOUT 與 0238 umask 檢查擴大涵蓋」「0221/0310/0311 檢查新增」「`check_cron` 函式新增」等項目，但實際程式碼於 v2.1 當時並未真正落地。本次一併補齊程式碼，使其與紀錄相符，並修正 ID 對應錯誤：
