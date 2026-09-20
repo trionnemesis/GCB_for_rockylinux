@@ -346,11 +346,16 @@ sudo /usr/local/apache/bin/apachectl restart
 ---
 
 **維護者**：warden
-**最後更新**：2026-09-12
+**最後更新**：2026-09-20
 **版本**：2.2
 
 ### 變更紀錄
 
+- **2026-09-20（官方版本複核，僅文件修正）**：透過瀏覽器實際載入 [NICS GCB 說明文件清單](https://www.nics.nat.gov.tw/core_business/cybersecurity_defense/GCB/GCB_Documentation/)，核對官方列示版本與文件下載項目。
+  - `TWGCB-01-012`（Red Hat Enterprise Linux 9，伺服器）列為 **v1.2_1140612**；`TWGCB-04-007`（Apache HTTP Server 2.4）列為 **v1.2_1111226**，均與專案標示的基準版本一致。官方清單提供 PDF、DOCX 下載連結與 SHA256。
+  - 移除本次草稿中與本專案無關的 macOS／Fortinet 敘述；官方清單已列出 Fortinet Fortigate 7 v1.0_1150626，先前紀錄中的「仍為預告項目」不作為現況依據。
+  - 本次核對限於官方文件版本，不代表重新完成全部規則或執行期符合性驗證。
+  - 僅更新 README 複核紀錄與日期，未修改 `GCB_CHECK/*.sh`、`GCB_SET/*.sh`、規則期望值或專案版本。
 - **2026-09-12（複核，無規則異動）**：依排程任務再次核對 NICS（國家資通安全研究院）現行公告之 GCB 版本。
   - 本工作階段的網路政策同樣封鎖直接連線 `www.nics.nat.gov.tw` / `download.nics.nat.gov.tw`（egress 被擋），改以公開網路搜尋交叉比對官方文件檔名與發布資訊。
   - 確認 **`TWGCB-01-012`（Red Hat Enterprise Linux 9 政府組態基準說明文件，伺服器）現行仍為 v1.2（中華民國114年6月12日 / 1140612）**，與 **`TWGCB-04-007`（Apache HTTP Server 2.4）v1.2** 一致，與 2026-07-17（v2.2）、2026-08-19、2026-09-10 三次複核結論相同，未發現官方已發布新版本。
